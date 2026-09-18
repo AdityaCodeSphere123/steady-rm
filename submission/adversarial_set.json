@@ -1,5 +1,20 @@
 {
-  "_comment": "OPTIONAL bonus track (assignment Section 7, docs/GRADING.md). Map a handful of dev query IDs to a doc_id list you believe will induce maximal drift in an unknown opponent's relevance_model_feedback(). Delete the _comment key or leave this file absent entirely if you are not attempting the bonus track -- absence is scored as +0.0, never a penalty.",
-  "q1": ["d3", "d9", "d14"],
-  "q5": ["d2", "d11"]
+  "q2": [
+    "d20"
+  ],
+  "q1": [
+    "d18"
+  ],
+  "q3": [
+    "d18"
+  ],
+  "q4": [
+    "d18"
+  ],
+  "q5": [
+    "d5",
+    "d8",
+    "d13",
+    "d10"
+  ]
 }
