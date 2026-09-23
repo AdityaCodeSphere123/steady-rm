@@ -102,7 +102,7 @@ int rm_explain(const char* query, const char* seeds, int ns, const char* cands, 
     o << "],\"model\":[";
     for (size_t i = 0; i < ex.rm.size(); ++i) o << (i ? "," : "") << "[" << jstr(ex.rm[i].first) << "," << ex.rm[i].second << "]";
     o << "],\"lambda\":" << ex.lambda << ",\"coherence\":" << ex.coherence << ",\"clarity\":" << ex.clarity
-      << ",\"mu\":" << ex.mu << "}";
+      << ",\"mu\":" << ex.mu << ",\"qpp\":" << ex.qpp << "}";
     return copy_buf(o.str(), buf, len);
 }
 

@@ -65,6 +65,15 @@ struct Params {
     // A1 idea: tilt lambda by query length (long queries need less expansion).
     //   lambda += lam_qlen_slope * (|Q| - lam_qlen_pivot), clamped to [0, 0.95]
     double lam_qlen_slope = 0.0, lam_qlen_pivot = 3;
+    // A1 "document-as-query" rule, made smooth: past qlen_shrink terms the
+    // expansion weight (1-lambda) is scaled by qlen_shrink/|Q| (0 = off).
+    // Long queries (ArguAna-style) already say what they mean.
+    double qlen_shrink = 0.0;
+    // Seed-independent confidence gate (query-performance prediction on the
+    // candidate POOL, never on the seed): g = mean z-score of the pool's top
+    // 10 by query likelihood. Low g = flat first pass = risky feedback:
+    //   lambda += qpp_w * clamp((qpp_hi - g) / (qpp_hi - qpp_lo), 0, 1)
+    double qpp_w = 0.0, qpp_lo = 1.2, qpp_hi = 1.9;
     double coh_w = 0.65;         // adaptive: quality = coh_w*coherence + (1-coh_w)*clarity
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
@@ -82,7 +91,7 @@ struct Explain {
     std::vector<std::string> qterms;
     std::vector<std::pair<std::string, double>> seed_weights;
     std::vector<std::pair<std::string, double>> rm;   // estimated P(w|R)
-    double lambda = 1, coherence = 0, clarity = 0, mu = 0;
+    double lambda = 1, coherence = 0, clarity = 0, mu = 0, qpp = -1;
 };
 
 class Engine {

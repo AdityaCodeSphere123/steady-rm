@@ -62,6 +62,8 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 0, "fb_docs": 10, "fb_terms": 20, "beta": 1.0,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
     "agree_gamma": 1.0, "lambda": -1,
+    "qlen_shrink": 16,   # long (document-like) queries: shrink expansion (A1 rule)
+    "qpp_w": 0.0,        # pool-QPP gate: tune on your collections with tools/multi_sweep.py
     "fb_sdm": 1, "fb_prior_w": -1,
 }
 

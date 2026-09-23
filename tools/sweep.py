@@ -103,7 +103,7 @@ def evaluate(queries, qrels, cands, all_docs, conds=("pool25", "pool50", "pool75
                     s[p] = d
             res[c].append(run(s))
     m = {k: (sum(v) / len(v) if v else 0.0) for k, v in res.items()}
-    noisy = [m[c] for c in ("pool25", "pool50")]
+    noisy = [m[c] for c in ("pool25", "pool50") if c in m]
     m["retention"] = min(1.0, (sum(noisy) / len(noisy)) / m["clean"]) if m["clean"] > 0 else 0.0
     return m
 

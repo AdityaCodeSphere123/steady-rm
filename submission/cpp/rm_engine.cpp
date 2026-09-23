@@ -24,7 +24,7 @@ namespace rm {
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
-    X(lam_qlen_pivot)
+    X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -869,14 +869,29 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     }
     if (variant == 3 && P.lam_qlen_slope != 0)
         lam = std::min(0.95, std::max(0.0, lam + P.lam_qlen_slope * (q.len() - P.lam_qlen_pivot)));
+    if (variant == 3 && P.qlen_shrink > 0 && q.len() > P.qlen_shrink)
+        lam = 1.0 - (1.0 - lam) * P.qlen_shrink / q.len();
+    std::vector<int32_t> docs(cands.size());
+    for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
+    double qpp_g = -1;
+    if (variant == 3 && P.qpp_w > 0 && docs.size() >= 20) {
+        // Uses only the query and the candidate pool: identical for clean and
+        // perturbed seeds, so it cannot tell (or care) which call this is.
+        std::vector<double> ql = score_pool(q, docs, nullptr, 1.0, true);
+        zscore(ql);
+        std::sort(ql.begin(), ql.end(), std::greater<double>());
+        double g = 0; for (int i = 0; i < 10; ++i) g += ql[i];
+        qpp_g = g / 10;
+        double t = std::min(1.0, std::max(0.0, (P.qpp_hi - qpp_g) / std::max(1e-9, P.qpp_hi - P.qpp_lo)));
+        lam = std::min(1.0, lam + P.qpp_w * t * (1.0 - lam));
+    }
     if (ex) {
         ex->qterms = q.strs;
         for (auto& sd : seed) ex->seed_weights.push_back({std::string(docids_.key(doc_key_[sd.d])), sd.w});
         for (auto& [t, w] : model) ex->rm.push_back({std::string(vocab_.key(t)), w});
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
-    std::vector<int32_t> docs(cands.size());
-    for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
+    if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
     std::vector<double> sc = score_pool(q, docs, &model, lam, variant == 3 && P.fb_sdm > 0);
     double pw = variant != 3 ? 0.0 : (P.fb_prior_w >= 0 ? P.fb_prior_w : P.prior_w);
     return fuse_rank(sc, cands, pw, k);
