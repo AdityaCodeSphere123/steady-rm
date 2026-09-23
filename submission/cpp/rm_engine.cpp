@@ -27,7 +27,7 @@ namespace rm {
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
-    X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n)
+    X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -586,7 +586,9 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         }
     }
     const double T = static_cast<double>(total_);
-    const double lw = P.lead_w;
+    const double qn0 = static_cast<double>(q.len());
+    const double fade = (P.longq_n > 0 && qn0 > P.longq_n) ? P.longq_n / qn0 : 1.0;
+    const double lw = P.lead_w * fade;
     const double ll = std::min<double>(dlen, lead_len), lmu = P.lead_mu;
     for (size_t u = 0; u < U; ++u) {
         const double pc = cf_[q.uniq[u]] / T;
@@ -639,12 +641,13 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
         }
     }
     const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
+    const double fade = (P.longq_n > 0 && qn > P.longq_n) ? P.longq_n / qn : 1.0;
     auto one = [&](size_t i, Scratch& s) {
         const int32_t d = docs[i];
         DocFeat f = doc_features(q, d, s);
         double qs = qpart(q, f, sdm);
         const double lprior = P.len_prior != 0 && d >= 0
-            ? P.len_prior * std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d])) : 0.0;
+            ? P.len_prior * fade * std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d])) : 0.0;
         if (!model) { out[i] = qs + lprior; return; }
         double rmp = base_const;
         uint32_t dlen = 0;

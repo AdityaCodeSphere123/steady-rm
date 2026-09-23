@@ -58,6 +58,7 @@ PARAMS: Dict[str, float] = {
     "w_od": 0.10, "w_uw": 0.10, "uw_window": 8,
     "lead_w": 0.25, "lead_len": 12, "lead_mu": 50,   # A1 title-window idea as a field LM
     "prior_w": 0.30, "prior_k": 20, "len_prior": 0.25,
+    "longq_n": 16,          # fade lead_w / len_prior on document-like queries
     "rm_variant": 3, "rm2_mix": 0.0,
     "fb_mu": 200, "fb_docs": 10, "fb_terms": 20, "beta": 1.0,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,

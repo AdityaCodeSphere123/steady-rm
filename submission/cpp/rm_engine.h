@@ -49,6 +49,10 @@ struct Params {
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
     // Document-length prior P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
     double len_prior = 0.0;
+    // A1 long-query rule: past longq_n terms, lead_w and len_prior fade by
+    // longq_n/|Q| (0 = off). ArguAna's document-as-query (~92 terms) should
+    // not get a title-window or length prior; short queries are untouched.
+    double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
     // --- relevance model --------------------------------------------------------

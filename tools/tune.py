@@ -19,23 +19,24 @@ submission/feedback.py.
 import argparse, json, multiprocessing as mp, os, sys, time
 
 SPACE = {
-    # Track A
+    # Track A — centred on kept values; edge knobs extend past the last grid
     "mu_factor": [3, 4, 5],
     "prior_w": [0.2, 0.3, 0.45, 0.6],
-    "prior_k": [20, 60, 120],
-    "len_prior": [0, 0.25, 0.5],
-    "lead_w": [0.1, 0.15, 0.25],
-    "w_od": [0.1, 0.2, 0.3],
+    "prior_k": [10, 20, 40],
+    "len_prior": [0.15, 0.25, 0.4],
+    "lead_w": [0.2, 0.25, 0.35],
+    "w_od": [0.05, 0.1, 0.15],
     "w_uw": [0.05, 0.1, 0.2],
     "qstop_min_len": [3, 5],
+    "longq_n": [0, 16, 24],
     # Feedback
     "fb_docs": [5, 10],
     "fb_terms": [15, 20, 30],
     "beta": [0.5, 1, 2],
     "agree_gamma": [0, 1, 2],
     "rm2_mix": [0, 0.3],
-    "idf_power": [0, 0.5],
-    "fb_mu": [0, 200],
+    "idf_power": [0.25, 0.5, 0.75],
+    "fb_mu": [100, 200, 400],
     "term_support": [1, 2],
     "lambda_min": [0.35, 0.45, 0.55],
     "lambda_max": [0.8, 0.85, 0.9],
