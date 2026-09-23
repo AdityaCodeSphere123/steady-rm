@@ -47,6 +47,8 @@ struct Params {
     // sentence) form a second document model mixed into P(q|D):
     //   P(q|D) = (1-lead_w) P_body(q|D) + lead_w P_lead(q|D)
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
+    // Document-length prior P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
+    double len_prior = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
     // --- relevance model --------------------------------------------------------
@@ -73,6 +75,10 @@ struct Params {
     // expansion weight (1-lambda) is scaled by qlen_shrink/|Q| (0 = off).
     // Long queries (ArguAna-style) already say what they mean.
     double qlen_shrink = 0.0;
+    // Few feedback documents = high-variance relevance model: with m < n
+    // usable seed docs, (1-lambda) is scaled by m/small_seed_n (0 = off).
+    // The harness always passes 10, so this only engages on hand-picked sets.
+    double small_seed_n = 0.0;
     // Seed-independent confidence gate (query-performance prediction on the
     // candidate POOL, never on the seed): g = mean z-score of the pool's top
     // 10 by query likelihood. Low g = flat first pass = risky feedback:

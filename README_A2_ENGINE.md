@@ -12,3 +12,10 @@ into the repo (keep the repo's own `submission/__init__.py` etc.).
 * `python -m tools.sweep --corpus ... --queries ... --qrels ... --candidates ... --folds 2 --grid lambda=0.3,0.5,0.7`
   — tuning / report plots (nDCG@10 at 0%, 25%, 50%, 75%, out-of-pool, hard noise).
 * `fb.explain_feedback(q, seed, pool)` — seed weights, expansion terms, λ.
+
+## Tuning / bonus tools
+* `python -m tools.tune --root data --rounds 2 --workers 4` — parallel coordinate
+  ascent over ~20 parameters on every collection; prints PARAMS to paste.
+* `python -m tools.make_adversarial --root data/full --n 5` — writes
+  `submission/adversarial_set.json` for the round-robin bonus.
+* `python -m tools.bench ...` with `RM_TIMING=1` — speed breakdown.

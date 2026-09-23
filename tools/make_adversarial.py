@@ -1,186 +1,114 @@
 """
-tools/make_adversarial.py -- generate submission/adversarial_set.json for
-the optional bonus round-robin (docs/GRADING.md). NOT part of the graded
-submission interface; the harness never imports this.
+tools/make_adversarial.py -- build submission/adversarial_set.json.
 
-What the bonus track actually rewards
--------------------------------------
-Attack score = the average nDCG@10 drop your poisoned seed induces in
-every OTHER team's relevance_model_feedback(), relative to that team's own
-clean score on the same query. You never see the defenders. So the search
-below optimises against SURROGATE defenders -- several plausible RM3
-implementations of the kind classmates are likely to submit -- and keeps
-the attack that hurts them on average, rather than the one that happens to
-destroy any single configuration.
+Bonus track (docs/GRADING.md): our doc lists are fed as the seed to every
+other team's relevance_model_feedback(); the attack score is the nDCG@10
+drop vs. their clean run on that query. We cannot run their code, so the
+search attacks three simulated defenders spanning the likely range of the
+class, all emulated by our own engine with different settings:
 
-What makes a poisoned seed strong
----------------------------------
-A seed document has to survive every filter a defender might apply before
-it can do damage, so the search implicitly selects for all of these at
-once:
+  naive     RM3, uniform P(D), 50 terms, lambda 0.5, no defences
+  textbook  RM3 with exact RM1 weights P(D|Q) = P(Q|D)
+  ours      our full submission (a strong, defended opponent)
 
-  * non-relevant under the dev qrels (otherwise promoting it helps);
-  * high query likelihood, so per-document P(D|Q) weighting and any
-    query-anchored filter still let it vote;
-  * mutually coherent with the rest of the poisoned set, so a
-    term-consensus filter sees the shared off-topic terms attested by
-    several documents rather than one;
-  * carrying terms that are concentrated in OTHER non-relevant pool
-    documents, so the drift actually promotes them into the top 10.
+Attack docs are NON-relevant pool documents (qrels <= 0 or unjudged). A
+poisoned seed drawn from the pool is the strongest attack: the relevance
+model then promotes exactly those documents into the top 10. Documents are
+chosen greedily to maximise the mean drop over the three defenders, among
+the non-relevant pool docs with the highest query likelihood (high P(Q|D)
+is what gets a document past likelihood weighting and query anchoring).
+Finally the --n queries with the largest mean drop are kept.
 
-Greedy forward selection finds sets with those properties without having
-to hand-encode any of them: it just measures the damage.
-
-Usage:
-    python -m tools.make_adversarial                    # toy set
-    python -m tools.make_adversarial --corpus data/full/corpus.jsonl ...
+  python -m tools.make_adversarial --root data/full --n 5 --out submission/adversarial_set.json
 """
-import argparse
-import json
-import os
-from typing import Dict, List
+import argparse, json, math, os
 
-from harness.candidates_io import read_candidates
-from harness.metrics import ndcg_at_k
-from harness.trec_io import read_qrels, read_queries
+from submission import feedback as fb
+from tools.multi_sweep import find
+from tools.sweep import ndcg10, read_candidates, read_qrels, read_queries
 
-import submission.feedback as fb
-
-PRF_DEPTH = 10
-
-
-def _surrogates():
-    """Plausible defender configurations to optimise against.
-
-    Deliberately a spread: an unfiltered textbook RM3 at two interpolation
-    weights (what most submissions will be), plus our own hardened model
-    (so the attack is not simply one our own defence would shrug off, which
-    would be evidence it is narrow).
-    """
-    return [
-        dict(name="rm3-lam0.3", LAMBDA_FIXED=0.3, USE_SOFT_WEIGHTS=False,
-             USE_TRIMMING=False, USE_QUERY_ANCHOR=False, USE_TERM_CONSENSUS=False,
-             USE_ADAPTIVE_LAMBDA=False),
-        dict(name="rm3-lam0.5", LAMBDA_FIXED=0.5, USE_SOFT_WEIGHTS=False,
-             USE_TRIMMING=False, USE_QUERY_ANCHOR=False, USE_TERM_CONSENSUS=False,
-             USE_ADAPTIVE_LAMBDA=False),
-        dict(name="rm3-weighted-lam0.4", LAMBDA_FIXED=0.4, USE_SOFT_WEIGHTS=True,
-             USE_TRIMMING=False, USE_QUERY_ANCHOR=False, USE_TERM_CONSENSUS=False,
-             USE_ADAPTIVE_LAMBDA=False),
-        dict(name="hardened", LAMBDA_FIXED=None),
-    ]
+NAIVE = dict(beta=0, anchor_min=0, term_support=1, agree_gamma=0, fb_terms=50, fb_docs=10,
+             w_od=0, w_uw=0, prior_w=0, fb_prior_w=0, lead_w=0, qlen_shrink=0, min_cf=1,
+             rm2_mix=0, per_doc_cap=1, fb_mu=0, idf_power=0, len_prior=0, qpp_w=0, small_seed_n=0, rm_variant=3)
+NAIVE["lambda"] = 0.5
+TEXTBOOK = dict(NAIVE, beta=-1)
+DEFENDERS = {"naive": NAIVE, "textbook": TEXTBOOK, "ours": {}}
 
 
-_DEFAULTS = {}
-
-
-def _snapshot():
-    global _DEFAULTS
-    _DEFAULTS = {
-        key: getattr(fb, key)
-        for key in (
-            "LAMBDA_FIXED", "USE_SOFT_WEIGHTS", "USE_TRIMMING",
-            "USE_QUERY_ANCHOR", "USE_TERM_CONSENSUS", "USE_ADAPTIVE_LAMBDA",
-        )
-    }
-
-
-def _configure(cfg: Dict):
-    for key, value in _DEFAULTS.items():
-        setattr(fb, key, value)
-    for key, value in cfg.items():
-        if key != "name":
-            setattr(fb, key, value)
-
-
-def _ndcg(query, seed, pool, qrels_q):
-    ranked = [d for d, _s in fb.relevance_model_feedback(query, seed, pool, 10)]
-    return ndcg_at_k(ranked, qrels_q, k=10)
-
-
-def mean_drop(query, seed, pool, qrels_q, clean_by_surrogate) -> float:
-    """Average nDCG@10 drop this seed induces across the surrogates."""
-    drops = []
-    for cfg in _surrogates():
-        _configure(cfg)
-        drops.append(clean_by_surrogate[cfg["name"]] - _ndcg(query, seed, pool, qrels_q))
-    return sum(drops) / len(drops)
-
-
-def attack_query(query, pool, qrels_q, max_size: int, candidates_considered: int):
-    """Greedy forward selection of a poisoned seed set."""
-    _configure({"name": "hardened", "LAMBDA_FIXED": None})
-    clean_seed = [d for d, _s in fb.score_candidates(query, pool, PRF_DEPTH)]
-
-    clean_by_surrogate = {}
-    for cfg in _surrogates():
-        _configure(cfg)
-        clean_by_surrogate[cfg["name"]] = _ndcg(query, clean_seed, pool, qrels_q)
-
-    # Only non-relevant documents are worth poisoning with; order them by
-    # query likelihood so the strongest impostors are tried first.
-    _configure({"name": "hardened", "LAMBDA_FIXED": None})
-    ranked_pool = [d for d, _s in fb.score_candidates(query, pool, len(pool))]
-    pool_nonrel = [d for d in ranked_pool if qrels_q.get(d, 0) == 0][:candidates_considered]
-    if not pool_nonrel:
-        return [], 0.0
-
-    chosen: List[str] = []
-    best_total = 0.0
-    while len(chosen) < max_size:
-        best_doc, best_score = None, best_total
-        for doc in pool_nonrel:
-            if doc in chosen:
-                continue
-            score = mean_drop(query, chosen + [doc], pool, qrels_q, clean_by_surrogate)
-            if score > best_score + 1e-9:
-                best_doc, best_score = doc, score
-        if best_doc is None:
-            break
-        chosen.append(best_doc)
-        best_total = best_score
-    return chosen, best_total
+def use(cfg):
+    fb.set_params(**fb.PARAMS)
+    fb.set_params(**cfg)
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--corpus", default="data/toy/corpus.jsonl")
-    ap.add_argument("--queries", default="data/toy/queries_dev.tsv")
-    ap.add_argument("--qrels", default="data/toy/qrels_dev.txt")
-    ap.add_argument("--candidates", default="data/toy/candidates_dev.jsonl")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", required=True, help="collection dir (corpus/queries/qrels/candidates)")
+    ap.add_argument("--n", type=int, default=5, help="queries to keep")
+    ap.add_argument("--max-docs", type=int, default=10)
+    ap.add_argument("--pool-cands", type=int, default=25)
     ap.add_argument("--out", default="submission/adversarial_set.json")
-    ap.add_argument("--max-size", type=int, default=5, help="docs per poisoned seed")
-    ap.add_argument("--top-queries", type=int, default=5, help="how many queries to attack")
-    ap.add_argument("--consider", type=int, default=40,
-                    help="how many non-relevant pool docs to search over per query")
-    args = ap.parse_args()
-
-    queries = read_queries(args.queries)
-    qrels = read_qrels(args.qrels)
-    cands = read_candidates(args.candidates)
-
-    fb.prepare(args.corpus)
-    _snapshot()
+    a = ap.parse_args()
+    corpus = find(a.root, ["corpus.jsonl"])
+    queries = read_queries(find(a.root, ["queries_dev.tsv", "queries*.tsv", "*.tsv"]))
+    qrels = read_qrels(find(a.root, ["qrels_dev.txt", "qrels*.txt", "qrels*.json"]))
+    cands = read_candidates(find(a.root, ["candidates_dev.jsonl", "candidates*.jsonl"]))
+    fb.prepare(corpus)
 
     results = []
     for qid, text in queries:
-        if qid not in cands or qid not in qrels:
+        pool, rel = cands.get(qid), qrels.get(qid)
+        if not pool or not rel:
             continue
-        pool = [d for d, _s in cands[qid]]
-        seed, drop = attack_query(text, pool, qrels[qid], args.max_size, args.consider)
-        if seed and drop > 0:
-            results.append((drop, qid, seed))
-            print(f"{qid:<6} mean surrogate drop {drop:+.4f}  seed={seed}")
-        else:
-            print(f"{qid:<6} no profitable attack found")
+        clean, dfn = {}, {}
+        for name, cfg in DEFENDERS.items():
+            use(cfg)
+            seed = [d for d, _ in fb.score_candidates(text, pool, 10)]
+            clean[name] = ndcg10([d for d, _ in fb.relevance_model_feedback(text, seed, pool, 10)], rel)
+        use({})
+        ranked = [d for d, _ in fb.score_candidates(text, pool, len(pool))]
+        bad = [d for d in ranked if rel.get(d, 0) <= 0][: a.pool_cands]
+        if not bad:
+            continue
 
-    _configure({"name": "hardened", "LAMBDA_FIXED": None})
+        def drops(seed):
+            out = {}
+            for name, cfg in DEFENDERS.items():
+                use(cfg)
+                got = ndcg10([d for d, _ in fb.relevance_model_feedback(text, seed, pool, 10)], rel)
+                out[name] = clean[name] - got
+            return out
+
+        chosen, best, best_seed, best_d = [], -1e9, [], {}
+        while len(chosen) < a.max_docs:
+            step = None
+            for d in bad:
+                if d in chosen:
+                    continue
+                dd = drops(chosen + [d])
+                m = sum(dd.values()) / len(dd)
+                if step is None or m > step[0]:
+                    step = (m, d, dd)
+            if step is None:
+                break
+            chosen.append(step[1])
+            if step[0] > best:
+                best, best_seed, best_d = step[0], list(chosen), step[2]
+        results.append((best, qid, best_seed, best_d))
+        print(f"{qid}: mean drop {best:.3f}  " + "  ".join(f"{k}={v:.3f}" for k, v in best_d.items())
+              + f"  ({len(best_seed)} docs)", flush=True)
+
     results.sort(reverse=True)
-    payload = {qid: seed for _drop, qid, seed in results[: args.top_queries]}
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2)
-    print(f"\nwrote {len(payload)} attacked queries to {args.out}")
+    keep = results[: a.n]
+    out = {qid: seed for _, qid, seed, _ in keep}
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    with open(a.out, "w") as f:
+        json.dump(out, f, indent=2)
+    if keep:
+        avg = {k: sum(r[3][k] for r in keep) / len(keep) for k in DEFENDERS}
+        print(f"\nwrote {a.out}: {len(out)} queries; average drop on kept queries: "
+              + "  ".join(f"{k}={v:.3f}" for k, v in avg.items()))
+        print("('ours' = how much this attack would hurt us: our defence against a strong attacker)")
+    use({})
 
 
 if __name__ == "__main__":

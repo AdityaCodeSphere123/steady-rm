@@ -27,7 +27,7 @@ namespace rm {
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
-    X(mu_mode) X(mu_loo_scale) X(mu_loo_docs)
+    X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -643,7 +643,9 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
         const int32_t d = docs[i];
         DocFeat f = doc_features(q, d, s);
         double qs = qpart(q, f, sdm);
-        if (!model) { out[i] = qs; return; }
+        const double lprior = P.len_prior != 0 && d >= 0
+            ? P.len_prior * std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d])) : 0.0;
+        if (!model) { out[i] = qs + lprior; return; }
         double rmp = base_const;
         uint32_t dlen = 0;
         if (d >= 0) {
@@ -658,7 +660,7 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
             }
         }
         if (!jm) rmp -= msum * std::log(dlen + mu);
-        out[i] = lam * qs / qn + (1 - lam) * rmp;
+        out[i] = lam * qs / qn + (1 - lam) * rmp + lprior / qn;
     };
     uint64_t work = 0;
     for (int32_t d : docs) if (d >= 0) work += tok_off_[d + 1] - tok_off_[d];
@@ -1007,6 +1009,12 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     }
     if (variant == 3 && P.lam_qlen_slope != 0)
         lam = std::min(0.95, std::max(0.0, lam + P.lam_qlen_slope * (q.len() - P.lam_qlen_pivot)));
+    if (variant == 3 && P.small_seed_n > 0) {
+        size_t valid = 0;
+        std::unordered_set<int32_t> seen;
+        for (auto id : seeds) { int32_t d = doc_index(id); if (d >= 0 && seen.insert(d).second) ++valid; }
+        if (valid < P.small_seed_n) lam = 1.0 - (1.0 - lam) * valid / P.small_seed_n;
+    }
     if (variant == 3 && P.qlen_shrink > 0 && q.len() > P.qlen_shrink)
         lam = 1.0 - (1.0 - lam) * P.qlen_shrink / q.len();
     std::vector<int32_t> docs(cands.size());

@@ -1,248 +1,135 @@
 """
-tools/tune.py -- pick parameters without fitting the ~50 dev topics.
-NOT part of the submission.
+tools/tune.py -- parallel coordinate ascent over ALL parameters, on ALL
+local collections at once, against a proxy of the leaderboard score.
 
-The problem this solves
------------------------
-There is nothing to train in submission/feedback.py -- no weights, no
-gradients. What there is: about eight hyperparameters, and a released dev
-topic set small enough that picking them by "best dev nDCG" mostly fits
-the topics rather than the collection. The held-out topics are different
-ones, so that fit does not transfer.
+  python -m tools.tune --root data --rounds 2 --workers 4 --log tune_log.tsv
 
-Two guards, both implemented here:
+Objective per collection (Section 7 weights; retention enters through the
+absolute noisy nDCG, which rewards both quality and robustness):
+    J_c = 0.30 * QL + 0.25 * clean_FB + 0.35 * mean(noisy_FB at 25%, 50%)
+Overall J = weighted mean of J_c (--full-weight counts data/full extra,
+since the dev corpus is the closest thing to the held-out collection).
 
-  1. K-FOLD CROSS-VALIDATION OVER TOPICS. Split the dev topics into folds,
-     choose parameters on K-1 folds, score on the held-out fold. The
-     reported number is the mean held-out score, which is an honest
-     estimate of what the graded topics will do. A setting whose in-fold
-     and held-out numbers diverge is fitting noise.
-  2. MULTIPLE COLLECTIONS AND MULTIPLE CANDIDATE POOLS. Pass --collection
-     more than once. The search then optimises the WORST collection's
-     score, not the mean: on an unseen topic set you care about the floor,
-     not the average. Use tools/fetch_datasets.py --degrade to add a
-     weakened candidate pool as one of the collections.
-
-The objective
--------------
-The real leaderboard percentile-ranks each track against the class, which
-no single team can compute. The local surrogate is
-
-    OBJ = 0.30*A_ndcg + 0.25*B_ndcg + 0.35*(retention * B_ndcg)
-
-i.e. Track C's ratio re-multiplied by clean nDCG, so the objective cannot
-be gamed by tanking B to make the ratio look good. --pareto skips the
-scalarisation and prints the B-versus-retention frontier instead, which is
-the honest picture and the thing to put in the report: there is no single
-best point, there is a trade-off curve, and you choose where to sit on it.
-
-Usage
------
-    python -m tools.tune --collection data/full --folds 5 --search coordinate
-    python -m tools.tune --collection data/full --collection data/nfcorpus \
-        --collection data/fiqa --search coordinate
-    python -m tools.tune --collection data/full --pareto
+A move is kept only if J improves by more than --eps (default 0.0003):
+anything smaller is query-sampling noise and would just overfit.
+Collections are evaluated in parallel worker processes (1 engine thread
+each, so 4 workers = 4 cores). Prints the final PARAMS to paste into
+submission/feedback.py.
 """
-import argparse
-import importlib
-import itertools
-import json
-import os
-import random
-from typing import Dict, List, Sequence, Tuple
+import argparse, json, multiprocessing as mp, os, sys, time
 
-from harness.metrics import evaluate_run
-from harness.noise_injection import perturb_pseudo_relevant_set, stable_seed
-from harness.candidates_io import read_candidates
-from harness.trec_io import read_qrels, read_queries
-
-import submission.feedback as fb
-
-PRF_DEPTH = 10
-NOISE_LEVELS = [0.25, 0.5, 0.75]
-
-# Search space. Ordered by expected payoff -- coordinate descent walks it
-# in this order and one pass is usually enough.
-GRID: Dict[str, List] = {
-    "MU_AVGDL_FACTOR": [6.0, 9.0, 12.0, 16.0, 22.0],
-    "LAMBDA_MIN": [0.30, 0.40, 0.45, 0.55],
-    "LAMBDA_MAX": [0.70, 0.80, 0.85, 0.92],
-    "MAX_EXPANSION_TERMS": [20, 40, 60, 100],
-    "MAX_FEEDBACK_DOCS": [5, 8, 10],
-    "WEIGHT_BETA": [0.8, 1.6, 2.5, 4.0],
-    "FEEDBACK_MU": [100.0, 400.0, 1000.0],
-    "RANK_PRIOR_WEIGHT": [0.0, 0.15, 0.30, 0.50],
-    "TRIM_FLOOR": [0.05, 0.15, 0.30],
+SPACE = {
+    # Track A
+    "mu_factor": [3, 4, 5],
+    "prior_w": [0.2, 0.3, 0.45, 0.6],
+    "prior_k": [20, 60, 120],
+    "len_prior": [0, 0.25, 0.5],
+    "lead_w": [0.1, 0.15, 0.25],
+    "w_od": [0.1, 0.2, 0.3],
+    "w_uw": [0.05, 0.1, 0.2],
+    "qstop_min_len": [3, 5],
+    # Feedback
+    "fb_docs": [5, 10],
+    "fb_terms": [15, 20, 30],
+    "beta": [0.5, 1, 2],
+    "agree_gamma": [0, 1, 2],
+    "rm2_mix": [0, 0.3],
+    "idf_power": [0, 0.5],
+    "fb_mu": [0, 200],
+    "term_support": [1, 2],
+    "lambda_min": [0.35, 0.45, 0.55],
+    "lambda_max": [0.8, 0.85, 0.9],
+    "coh_w": [0.4, 0.65, 0.9],
+    "fb_prior_w": [-1, 0.15, 0.45],
 }
 
-
-class Collection:
-    def __init__(self, path: str, candidates: str = None) -> None:
-        self.path = path
-        self.name = os.path.basename(path.rstrip("/"))
-        self.corpus = os.path.join(path, "corpus.jsonl")
-        self.queries = read_queries(os.path.join(path, "queries_dev.tsv"))
-        self.qrels = read_qrels(os.path.join(path, "qrels_dev.txt"))
-        cand_path = candidates or os.path.join(path, "candidates_dev.jsonl")
-        self.candidates = read_candidates(cand_path)
-        self.cand_name = os.path.basename(cand_path)
-        self.qids = [q for q, _t in self.queries if q in self.candidates and q in self.qrels]
+_fb = None
+_cache = {}
 
 
-def _apply(params: Dict) -> None:
-    for key, value in params.items():
-        setattr(fb, key, value)
+def _init():
+    global _fb
+    os.environ["RM_THREADS"] = "1"
+    from submission import feedback
+    _fb = feedback
 
 
-def evaluate(coll: Collection, qids: Sequence[str]) -> Dict[str, float]:
-    """Track A / B / retention for one collection restricted to `qids`."""
-    fb.prepare(coll.corpus)
-    text_by_qid = dict(coll.queries)
-    qrels = {q: coll.qrels[q] for q in qids}
-
-    ql_run, clean_run = {}, {}
-    noisy_runs = {lv: {} for lv in NOISE_LEVELS}
-
-    for qid in qids:
-        text = text_by_qid[qid]
-        pool = [d for d, _s in coll.candidates[qid]]
-        ql_run[qid] = fb.score_candidates(text, pool, 10)
-        seed = [d for d, _s in fb.score_candidates(text, pool, PRF_DEPTH)]
-        clean_run[qid] = fb.relevance_model_feedback(text, seed, pool, 10)
-        rng = random.Random(stable_seed(qid, base_seed=0))
-        for lv in NOISE_LEVELS:
-            perturbed = perturb_pseudo_relevant_set(seed, pool, lv, rng)
-            noisy_runs[lv][qid] = fb.relevance_model_feedback(text, perturbed, pool, 10)
-
-    a = evaluate_run(ql_run, qrels)["aggregate"]
-    b = evaluate_run(clean_run, qrels)["aggregate"]["ndcg@10"]
-    noisy = [evaluate_run(r, qrels)["aggregate"]["ndcg@10"] for r in noisy_runs.values()]
-    mean_noisy = sum(noisy) / len(noisy) if noisy else 0.0
-    retention = min(1.0, mean_noisy / b) if b > 0 else 0.0
-    return {
-        "A_ndcg": a["ndcg@10"], "A_map": a["map@10"],
-        "B_ndcg": b, "retention": retention, "mean_noisy": mean_noisy,
-    }
+def _job(args):
+    name, files, params = args
+    from tools.sweep import evaluate, read_candidates, read_qrels, read_queries
+    if name not in _cache:
+        corpus, q, r, c = files
+        ids = [l.split('"doc_id"', 1)[1].split('"')[1] for l in open(corpus) if '"doc_id"' in l]
+        _cache.clear()   # keep one collection's data per worker
+        _cache[name] = (read_queries(q), read_qrels(r), read_candidates(c), ids)
+    queries, qrels, cands, ids = _cache[name]
+    _fb.set_params(**_fb.PARAMS)
+    _fb.set_params(**params)
+    _fb.prepare(files[0])
+    m = evaluate(queries, qrels, cands, ids, ("pool25", "pool50"))
+    return name, m
 
 
-def objective(m: Dict[str, float]) -> float:
-    """Leaderboard-shaped surrogate. Track C is re-multiplied by B so the
-    objective cannot be improved by making B worse."""
-    return 0.30 * m["A_ndcg"] + 0.25 * m["B_ndcg"] + 0.35 * (m["retention"] * m["B_ndcg"])
-
-
-def folds_of(qids: List[str], k: int, seed: int = 0) -> List[List[str]]:
-    shuffled = list(qids)
-    random.Random(seed).shuffle(shuffled)
-    return [shuffled[i::k] for i in range(k)]
-
-
-def cross_validated(colls: List[Collection], params: Dict, k: int) -> Dict:
-    """Mean held-out objective per collection, plus the worst of them."""
-    _apply(params)
-    per_coll = {}
-    for coll in colls:
-        scores, mets = [], []
-        for fold in folds_of(coll.qids, k):
-            if not fold:
-                continue
-            m = evaluate(coll, fold)
-            scores.append(objective(m))
-            mets.append(m)
-        n = max(1, len(mets))
-        per_coll[f"{coll.name}/{coll.cand_name}"] = {
-            "obj": sum(scores) / max(1, len(scores)),
-            "A_ndcg": sum(m["A_ndcg"] for m in mets) / n,
-            "B_ndcg": sum(m["B_ndcg"] for m in mets) / n,
-            "retention": sum(m["retention"] for m in mets) / n,
-        }
-    objs = [v["obj"] for v in per_coll.values()]
-    return {"per_collection": per_coll, "worst": min(objs), "mean": sum(objs) / len(objs)}
-
-
-def current_params() -> Dict:
-    return {key: getattr(fb, key) for key in GRID}
-
-
-def coordinate_search(colls: List[Collection], k: int, passes: int) -> Tuple[Dict, Dict]:
-    best = current_params()
-    best_res = cross_validated(colls, best, k)
-    print(f"start           worst={best_res['worst']:.4f}  mean={best_res['mean']:.4f}  {best}")
-    for p in range(passes):
-        improved = False
-        for key, values in GRID.items():
-            for value in values:
-                if value == best[key]:
-                    continue
-                trial = dict(best, **{key: value})
-                if trial["LAMBDA_MIN"] >= trial["LAMBDA_MAX"]:
-                    continue
-                res = cross_validated(colls, trial, k)
-                if res["worst"] > best_res["worst"] + 1e-6:
-                    best, best_res, improved = trial, res, True
-                    print(f"  {key}={value!r:>8}  worst={res['worst']:.4f}  mean={res['mean']:.4f}")
-        if not improved:
-            print(f"pass {p + 1}: converged")
-            break
-    return best, best_res
-
-
-def pareto(colls: List[Collection], k: int) -> None:
-    """B versus retention across fixed lambda -- the trade-off curve."""
-    print(f"{'lambda':>8}  {'A':>7}  {'B(clean)':>9}  {'retention':>9}  {'obj':>7}")
-    for lam in [0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
-        fb.LAMBDA_FIXED = lam
-        res = cross_validated(colls, current_params(), k)
-        agg = list(res["per_collection"].values())
-        a = sum(v["A_ndcg"] for v in agg) / len(agg)
-        b = sum(v["B_ndcg"] for v in agg) / len(agg)
-        r = sum(v["retention"] for v in agg) / len(agg)
-        print(f"{lam:>8.1f}  {a:>7.4f}  {b:>9.4f}  {r:>9.4f}  {res['worst']:>7.4f}")
-    fb.LAMBDA_FIXED = None
+def objective(m):
+    return 0.30 * m["ql"] + 0.25 * m["clean"] + 0.35 * 0.5 * (m["pool25"] + m["pool50"])
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--collection", action="append", required=True,
-                    help="directory with corpus.jsonl/queries_dev.tsv/qrels_dev.txt; repeatable")
-    ap.add_argument("--candidates", action="append", default=None,
-                    help="explicit candidates file per --collection, same order")
-    ap.add_argument("--folds", type=int, default=5)
-    ap.add_argument("--passes", type=int, default=2)
-    ap.add_argument("--search", choices=["none", "coordinate"], default="none")
-    ap.add_argument("--pareto", action="store_true")
-    ap.add_argument("--out", default="tuning_result.json")
-    args = ap.parse_args()
-
-    cands = args.candidates or [None] * len(args.collection)
-    colls = [Collection(p, c) for p, c in zip(args.collection, cands)]
-    for coll in colls:
-        print(f"{coll.name}: {len(coll.qids)} scorable queries, pool {coll.cand_name}")
-    print()
-
-    if args.pareto:
-        pareto(colls, args.folds)
-        return
-
-    if args.search == "coordinate":
-        best, res = coordinate_search(colls, args.folds, args.passes)
-    else:
-        best = current_params()
-        res = cross_validated(colls, best, args.folds)
-
-    print("\n== held-out (cross-validated) ==")
-    for name, v in res["per_collection"].items():
-        print(f"  {name:<34} obj={v['obj']:.4f}  A={v['A_ndcg']:.4f}  "
-              f"B={v['B_ndcg']:.4f}  ret={v['retention']:.4f}")
-    print(f"  worst={res['worst']:.4f}  mean={res['mean']:.4f}")
-    print("\n== parameters to paste into submission/feedback.py ==")
-    for key, value in best.items():
-        print(f"{key} = {value!r}")
-
-    with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump({"params": best, "result": res}, fh, indent=2)
-    print(f"\nwrote {args.out}")
+    from tools.multi_sweep import collections
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", default="data")
+    ap.add_argument("--only", default="")
+    ap.add_argument("--rounds", type=int, default=2)
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--eps", type=float, default=0.0003)
+    ap.add_argument("--full-weight", type=float, default=2.0)
+    ap.add_argument("--params", default="", help="comma list to restrict the search")
+    ap.add_argument("--log", default="tune_log.tsv")
+    a = ap.parse_args()
+    cols = collections(a.root, set(filter(None, a.only.split(","))))
+    weights = {c[0]: (a.full_weight if c[0] == "full" else 1.0) for c in cols}
+    space = {k: v for k, v in SPACE.items() if not a.params or k in a.params.split(",")}
+    from submission import feedback as fb
+    best = {k: fb.PARAMS.get(k, None) for k in space}
+    best = {k: v for k, v in best.items() if v is not None}
+    for k in space:  # params not in PARAMS start at the engine default
+        if k not in best:
+            best[k] = fb.get_param(k)
+    # Big collections first so workers finish together.
+    cols.sort(key=lambda c: -os.path.getsize(c[1]))
+    log = open(a.log, "a")
+    with mp.get_context("spawn").Pool(a.workers, initializer=_init) as pool:
+        def run(params):
+            t = time.perf_counter()
+            res = dict(pool.map(_job, [(c[0], c[1:], params) for c in cols], chunksize=1))
+            J = sum(weights[n] * objective(m) for n, m in res.items()) / sum(weights.values())
+            worst = min(m["clean"] - m["ql"] for m in res.values())
+            mean = {k: sum(m[k] for m in res.values()) / len(res) for k in ("ql", "clean", "pool50")}
+            log.write(json.dumps({"J": J, "params": params, "per": {n: {k: round(v, 4) for k, v in m.items()}
+                                  for n, m in res.items()}}) + "\n"); log.flush()
+            return J, mean, worst, time.perf_counter() - t
+        J0, mean, worst, dt = run(best)
+        print(f"start J={J0:.5f} ql={mean['ql']:.4f} clean={mean['clean']:.4f} n50={mean['pool50']:.4f} "
+              f"worst_fb={worst:+.4f} ({dt:.0f}s/eval)", flush=True)
+        for rnd in range(a.rounds):
+            moved = False
+            for k, values in space.items():
+                for v in values:
+                    if v == best[k]:
+                        continue
+                    trial = dict(best); trial[k] = v
+                    J, mean, worst, dt = run(trial)
+                    tag = ""
+                    if J > J0 + a.eps:
+                        best, J0, moved, tag = trial, J, True, "  <- keep"
+                    print(f"r{rnd} {k}={v:<6g} J={J:.5f} ql={mean['ql']:.4f} clean={mean['clean']:.4f} "
+                          f"n50={mean['pool50']:.4f} worst_fb={worst:+.4f}{tag}", flush=True)
+            if not moved:
+                break
+    print("\nFinal J =", round(J0, 5))
+    print("Paste into PARAMS in submission/feedback.py:")
+    print(json.dumps(best, indent=1))
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

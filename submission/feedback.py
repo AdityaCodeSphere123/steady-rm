@@ -55,14 +55,15 @@ PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0,
     "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
     "smoothing": 0, "mu": 0, "mu_factor": 4, "mu_min": 250, "mu_max": 2500, "mu_mode": 0, "mu_loo_scale": 5,
-    "w_od": 0.20, "w_uw": 0.10, "uw_window": 8,
-    "lead_w": 0.15, "lead_len": 12, "lead_mu": 50,   # A1 title-window idea as a field LM
-    "prior_w": 0.30,
+    "w_od": 0.10, "w_uw": 0.10, "uw_window": 8,
+    "lead_w": 0.25, "lead_len": 12, "lead_mu": 50,   # A1 title-window idea as a field LM
+    "prior_w": 0.30, "prior_k": 20, "len_prior": 0.25,
     "rm_variant": 3, "rm2_mix": 0.0,
-    "fb_mu": 0, "fb_docs": 10, "fb_terms": 20, "beta": 1.0,
+    "fb_mu": 200, "fb_docs": 10, "fb_terms": 20, "beta": 1.0,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
-    "agree_gamma": 1.0, "lambda": -1,
+    "agree_gamma": 0.0, "idf_power": 0.5, "lambda": -1, "lambda_min": 0.45, "lambda_max": 0.85, "coh_w": 0.65,
     "qlen_shrink": 16,   # long (document-like) queries: shrink expansion (A1 rule)
+    "small_seed_n": 5,   # hand-picked tiny seeds (adversarial track): trust less
     "qpp_w": 0.0,        # pool-QPP gate: tune on your collections with tools/multi_sweep.py
     "fb_sdm": 1, "fb_prior_w": -1,
 }
