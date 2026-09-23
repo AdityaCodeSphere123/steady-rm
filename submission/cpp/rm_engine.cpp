@@ -23,7 +23,8 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(par_min_tokens)
+    X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(lam_qlen_pivot)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -429,10 +430,10 @@ double Engine::log_p(uint32_t tf, uint32_t dlen, double pc) const {
 Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) const {
     DocFeat f;
     const size_t U = q.uniq.size();
-    uint32_t tfq[64];
-    std::vector<uint32_t> tfq_big;
-    uint32_t* tf = tfq;
-    if (U > 64) { tfq_big.assign(U, 0); tf = tfq_big.data(); } else std::fill(tfq, tfq + U, 0u);
+    std::vector<uint32_t> tfv(2 * U, 0);
+    uint32_t* tf = tfv.data();
+    uint32_t* tfl = tf + U;   // occurrences inside the lead window
+    const uint32_t lead_len = static_cast<uint32_t>(std::max(0.0, P.lead_len));
     uint32_t dlen = 0;
     s.hits.clear();
     if (d >= 0) {
@@ -441,12 +442,22 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         for (uint32_t i = 0; i < dlen; ++i) {
             const uint32_t term = t[i];
             for (size_t u = 0; u < U; ++u)
-                if (q.uniq[u] == term) { ++tf[u]; s.hits.push_back({i, static_cast<uint16_t>(u)}); break; }
+                if (q.uniq[u] == term) {
+                    ++tf[u];
+                    if (i < lead_len) ++tfl[u];
+                    s.hits.push_back({i, static_cast<uint16_t>(u)});
+                    break;
+                }
         }
     }
     const double T = static_cast<double>(total_);
+    const double lw = P.lead_w;
+    const double ll = std::min<double>(dlen, lead_len), lmu = P.lead_mu;
     for (size_t u = 0; u < U; ++u) {
-        f.uni += q.uniq_cnt[u] * log_p(tf[u], dlen, cf_[q.uniq[u]] / T);
+        const double pc = cf_[q.uniq[u]] / T;
+        double lp = log_p(tf[u], dlen, pc);
+        if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (tfl[u] + lmu * pc) / (ll + lmu));
+        f.uni += q.uniq_cnt[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
     }
     if (!q.pairs.empty() && (P.w_od > 0 || P.w_uw > 0)) {
@@ -856,6 +867,8 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         double quality = std::min(1.0, std::max(0.0, P.coh_w * coh + (1 - P.coh_w) * clar));
         lam = P.lambda_max - (P.lambda_max - P.lambda_min) * quality;
     }
+    if (variant == 3 && P.lam_qlen_slope != 0)
+        lam = std::min(0.95, std::max(0.0, lam + P.lam_qlen_slope * (q.len() - P.lam_qlen_pivot)));
     if (ex) {
         ex->qterms = q.strs;
         for (auto& sd : seed) ex->seed_weights.push_back({std::string(docids_.key(doc_key_[sd.d])), sd.w});

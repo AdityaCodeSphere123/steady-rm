@@ -92,11 +92,10 @@ def evaluate(queries, qrels, cands, all_docs, conds=("pool25", "pool50", "pool75
                         s[p] = d
             elif c.startswith("out"):
                 pset = set(pool)
+                outside = [d for d in all_docs if d not in pset]
                 for p in pos:
-                    d = rng.choice(all_docs)
-                    while d in pset:
-                        d = rng.choice(all_docs)
-                    s[p] = d
+                    if outside:  # full-recall pools (toy set) have no outside docs
+                        s[p] = rng.choice(outside)
             else:  # hard: best-ranked non-relevant pool docs outside the seed
                 full = [d for d, _ in fb.score_candidates(text, pool, len(pool))]
                 bad = [d for d in full if d not in seed and rel.get(d, 0) <= 0][:n]

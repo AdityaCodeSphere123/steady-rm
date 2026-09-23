@@ -39,6 +39,10 @@ struct Params {
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
     double uw_window = 8;
+    // A1 idea, as a field LM: the first lead_len tokens (the title / lead
+    // sentence) form a second document model mixed into P(q|D):
+    //   P(q|D) = (1-lead_w) P_body(q|D) + lead_w P_lead(q|D)
+    double lead_w = 0.0, lead_len = 12, lead_mu = 50;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
     // --- relevance model --------------------------------------------------------
@@ -58,6 +62,9 @@ struct Params {
     double agree_gamma = 0.0;    // outlier-seed down-weighting (0 off)
     double lambda = 0.5;         // RM3 weight on the query; <0 = adaptive
     double lambda_min = 0.45, lambda_max = 0.85;
+    // A1 idea: tilt lambda by query length (long queries need less expansion).
+    //   lambda += lam_qlen_slope * (|Q| - lam_qlen_pivot), clamped to [0, 0.95]
+    double lam_qlen_slope = 0.0, lam_qlen_pivot = 3;
     double coh_w = 0.65;         // adaptive: quality = coh_w*coherence + (1-coh_w)*clarity
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
