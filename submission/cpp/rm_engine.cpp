@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_set>
+#include <atomic>
+#include <memory>
 
 namespace rm {
 
@@ -135,6 +137,15 @@ struct Shard {
 
 bool Engine::prepare(const std::string& path_in, std::string& err) {
     auto t0 = std::chrono::steady_clock::now();
+    // RM_TIMING=1 prints a per-phase breakdown to stderr.
+    const bool timing = std::getenv("RM_TIMING") && std::getenv("RM_TIMING")[0] == '1';
+    auto mark = t0;
+    auto phase = [&](const char* name) {
+        if (!timing) return;
+        auto now = std::chrono::steady_clock::now();
+        std::fprintf(stderr, "[prepare] %-12s %.3fs\n", name, std::chrono::duration<double>(now - mark).count());
+        mark = now;
+    };
     std::string path = path_in;
     struct stat st{};
     if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) path += "/corpus.jsonl";
@@ -159,7 +170,10 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     const bool doc_stop = P.doc_stop > 0;
     const int W = pool_->workers();
     // Split into ~4 chunks per worker at line boundaries (dynamic balance).
-    const size_t n_chunks = size == 0 ? 0 : static_cast<size_t>(W) * 4;
+    // Chunk count depends on the file only, never on W: term ids (and so every
+    // tie-break) are then identical whether 1 or 4 threads ran prepare().
+    (void)W;
+    const size_t n_chunks = size == 0 ? 0 : std::min<size_t>(256, std::max<size_t>(16, size >> 22));
     std::vector<size_t> cut(n_chunks + 1, 0);
     for (size_t c = 1; c < n_chunks; ++c) {
         size_t pos = std::max(cut[c - 1], size * c / n_chunks);
@@ -211,6 +225,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
         }
     });
     if (map) munmap(map, size);
+    phase("tokenise");
 
     // Merge local vocabularies into the global one (deterministic order).
     vocab_ = StrTable(1 << 16);
@@ -246,6 +261,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
         for (size_t d = 0; d < sh.doc_end.size(); ++d) tok_off_[doc_base[c] + d + 1] = tok_base[c] + sh.doc_end[d];
         std::vector<uint32_t>().swap(sh.toks);
     });
+    phase("merge+remap");
     docids_ = StrTable(N + 16);
     docid_to_doc_.clear();
     doc_key_.assign(N, 0);
@@ -276,7 +292,12 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     scratch_.clear();
     for (int w = 0; w < pool_->workers(); ++w) scratch_.emplace_back(new Scratch(vocab_.size()));
     pair_cf_.clear();
+    qmark_.assign(vocab_.size(), 0xFFFF);
+    phase("docids+flags");
+    build_postings();
+    phase("postings");
     estimate_mu_loo();
+    phase("mu_loo");
     path_ = path;
     tok_cfg_sig_ = sig;
     ready_ = true;
@@ -401,6 +422,16 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
 
 std::vector<std::string> Engine::analyze_query(std::string_view query) { return parse_query(query).strs; }
 
+// Marks the query's terms in the dense qmark_ array (term -> slot) for the
+// lifetime of one call, so doc_features() classifies each token in O(1).
+struct Engine::Marks {
+    Engine& e; const Query& q;
+    Marks(Engine& en, const Query& qq) : e(en), q(qq) {
+        for (size_t u = 0; u < q.uniq.size(); ++u) e.qmark_[q.uniq[u]] = static_cast<uint16_t>(u);
+    }
+    ~Marks() { for (uint32_t t : q.uniq) e.qmark_[t] = 0xFFFF; }
+};
+
 // ---------------------------------------------------------------------------
 // Proximity counting. hits are (position, slot), sorted by position.
 //   ordered   #1(a b): a at i and b at i+1
@@ -428,46 +459,96 @@ static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
     }
 }
 
+// Document lists per term (doc ids only), built in parallel: every
+// (term, doc) pair is written once through a per-term atomic cursor. List
+// order is not sorted, which is fine: lists are only ever summed over.
+void Engine::build_postings() {
+    post_off_.clear(); post_.clear();
+    const size_t V = vocab_.size(), N = n_docs();
+    uint64_t total = 0;
+    for (uint32_t d : df_) total += d;
+    if (V == 0 || total > (1ull << 29)) return;     // > 2 GB: fall back to corpus scans
+    post_off_.assign(V + 1, 0);
+    for (size_t t = 0; t < V; ++t) post_off_[t + 1] = post_off_[t] + df_[t];
+    post_.assign(total, 0);
+    std::unique_ptr<std::atomic<uint64_t>[]> cur(new std::atomic<uint64_t>[V]);
+    for (size_t t = 0; t < V; ++t) cur[t].store(post_off_[t], std::memory_order_relaxed);
+    const int W = pool_->workers();
+    std::vector<std::vector<uint32_t>> stamp(W, std::vector<uint32_t>(V, 0));
+    const size_t chunks = std::min<size_t>(1024, std::max<size_t>(1, N / 256));
+    pool_->run(chunks, [&](size_t c, int w) {
+        auto& st = stamp[w];
+        for (size_t d = N * c / chunks; d < N * (c + 1) / chunks; ++d) {
+            const uint32_t mark = static_cast<uint32_t>(d + 1);
+            for (uint64_t i = tok_off_[d]; i < tok_off_[d + 1]; ++i) {
+                const uint32_t t = toks_[i];
+                if (st[t] == mark) continue;
+                st[t] = mark;
+                post_[cur[t].fetch_add(1, std::memory_order_relaxed)] = static_cast<uint32_t>(d);
+            }
+        }
+    });
+}
+
+// Collection counts of #1(a b) and #uwW(a b) for the query's adjacent pairs.
+// Only documents containing the rarer term of a pair can contribute, so each
+// pair walks that term's document list (split into parallel tasks) instead
+// of the whole corpus. Cached by term pair: pure collection statistics.
 void Engine::ensure_pair_stats(Query& q) {
     if (q.pairs.empty() || (P.w_od <= 0 && P.w_uw <= 0)) return;
     const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
     std::lock_guard<std::mutex> g(pair_m_);
     if (pair_window_ != W) { pair_cf_.clear(); pair_window_ = W; }
     std::vector<size_t> missing;
+    auto key_of = [&](size_t p) {
+        return (static_cast<uint64_t>(q.uniq[q.pairs[p].first]) << 32) | q.uniq[q.pairs[p].second];
+    };
     for (size_t p = 0; p < q.pairs.size(); ++p) {
-        uint64_t key = (static_cast<uint64_t>(q.uniq[q.pairs[p].first]) << 32) | q.uniq[q.pairs[p].second];
-        auto it = pair_cf_.find(key);
+        auto it = pair_cf_.find(key_of(p));
         if (it != pair_cf_.end()) q.pair_cf[p] = it->second;
         else missing.push_back(p);
     }
     if (missing.empty()) return;
-    std::vector<std::pair<uint16_t, uint16_t>> mp;
-    for (size_t p : missing) mp.push_back(q.pairs[p]);
-    // Dense slot marker over the vocabulary, shared read-only by the workers.
-    std::vector<uint16_t> mark(vocab_.size(), 0xFFFF);
-    for (auto& pr : mp) { mark[q.uniq[pr.first]] = pr.first; mark[q.uniq[pr.second]] = pr.second; }
-    const size_t N = n_docs(), chunks = std::min<size_t>(256, std::max<size_t>(1, N / 512));
-    std::mutex acc_m;
-    std::vector<uint64_t> od(mp.size(), 0), uw(mp.size(), 0);
-    pool_->run(chunks, [&](size_t c, int) {
-        std::vector<uint64_t> lod(mp.size(), 0), luw(mp.size(), 0);
+    const size_t N = n_docs();
+    const bool have_post = !post_off_.empty();
+    // Task = (pair index, first doc slot, last doc slot) over the rarer term's
+    // list, or over the whole corpus when there is no inverted list.
+    struct Task { size_t m; uint64_t b, e; };
+    std::vector<Task> tasks;
+    const uint64_t step = 4096;
+    for (size_t m = 0; m < missing.size(); ++m) {
+        const size_t p = missing[m];
+        uint32_t a = q.uniq[q.pairs[p].first], b = q.uniq[q.pairs[p].second];
+        uint32_t r = df_[a] <= df_[b] ? a : b;
+        uint64_t lo = have_post ? post_off_[r] : 0, hi = have_post ? post_off_[r + 1] : N;
+        for (uint64_t x = lo; x < hi; x += step) tasks.push_back({m, x, std::min(hi, x + step)});
+    }
+    std::vector<uint64_t> od(tasks.size(), 0), uw(tasks.size(), 0);
+    pool_->run(tasks.size(), [&](size_t ti, int) {
+        const Task& tk = tasks[ti];
+        const size_t p = missing[tk.m];
+        const uint32_t a = q.uniq[q.pairs[p].first], b = q.uniq[q.pairs[p].second];
+        const std::vector<std::pair<uint16_t, uint16_t>> pr{{0, static_cast<uint16_t>(a == b ? 0 : 1)}};
         std::vector<std::pair<uint32_t, uint16_t>> hits;
-        size_t d0 = N * c / chunks, d1 = N * (c + 1) / chunks;
-        for (size_t d = d0; d < d1; ++d) {
-            hits.clear();
+        uint64_t lod = 0, luw = 0;
+        for (uint64_t x = tk.b; x < tk.e; ++x) {
+            const size_t d = have_post ? post_[x] : x;
             const uint32_t* t = toks_.data() + tok_off_[d];
-            uint32_t n = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
-            for (uint32_t i = 0; i < n; ++i) { uint16_t s = mark[t[i]]; if (s != 0xFFFF) hits.push_back({i, s}); }
-            if (hits.size() >= 2) count_pairs(hits, mp, W, lod.data(), luw.data());
+            const uint32_t n = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+            hits.clear();
+            for (uint32_t i = 0; i < n; ++i) {
+                if (t[i] == a) hits.push_back({i, 0});
+                else if (t[i] == b) hits.push_back({i, 1});
+            }
+            if (hits.size() >= 2) count_pairs(hits, pr, W, &lod, &luw);
         }
-        std::lock_guard<std::mutex> lg(acc_m);
-        for (size_t i = 0; i < mp.size(); ++i) { od[i] += lod[i]; uw[i] += luw[i]; }
+        od[ti] = lod; uw[ti] = luw;
     });
-    for (size_t i = 0; i < missing.size(); ++i) {
-        size_t p = missing[i];
-        q.pair_cf[p] = {od[i], uw[i]};
-        uint64_t key = (static_cast<uint64_t>(q.uniq[q.pairs[p].first]) << 32) | q.uniq[q.pairs[p].second];
-        pair_cf_[key] = q.pair_cf[p];
+    std::vector<std::pair<uint64_t, uint64_t>> sum(missing.size(), {0, 0});
+    for (size_t ti = 0; ti < tasks.size(); ++ti) { sum[tasks[ti].m].first += od[ti]; sum[tasks[ti].m].second += uw[ti]; }
+    for (size_t m = 0; m < missing.size(); ++m) {
+        q.pair_cf[missing[m]] = sum[m];
+        pair_cf_[key_of(missing[m])] = sum[m];
     }
 }
 
@@ -497,14 +578,11 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         const uint32_t* t = toks_.data() + tok_off_[d];
         dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
         for (uint32_t i = 0; i < dlen; ++i) {
-            const uint32_t term = t[i];
-            for (size_t u = 0; u < U; ++u)
-                if (q.uniq[u] == term) {
-                    ++tf[u];
-                    if (i < lead_len) ++tfl[u];
-                    s.hits.push_back({i, static_cast<uint16_t>(u)});
-                    break;
-                }
+            const uint16_t u = qmark_[t[i]];     // query slot, or 0xFFFF
+            if (u == 0xFFFF) continue;
+            ++tf[u];
+            if (i < lead_len) ++tfl[u];
+            s.hits.push_back({i, u});
         }
     }
     const double T = static_cast<double>(total_);
@@ -645,6 +723,7 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
     Query q = parse_query(query);
     if (q.terms.empty()) return pool_order(cands, k);
     ensure_pair_stats(q);
+    Marks mk(*this, q);
     std::vector<int32_t> docs(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
     std::vector<double> s = score_pool(q, docs, nullptr, 1.0, true);
@@ -887,6 +966,7 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
     Query q = parse_query(query);
     if (q.terms.empty()) return out;
     ensure_pair_stats(q);
+    Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     auto seed = seed_weights(q, seeds, s);
     if (seed.empty()) return out;
@@ -908,6 +988,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     Query q = parse_query(query);
     if (q.terms.empty()) return pool_order(cands, k);
     ensure_pair_stats(q);
+    Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     const int variant = static_cast<int>(P.rm_variant);
     auto seed = seed_weights(q, seeds, s);

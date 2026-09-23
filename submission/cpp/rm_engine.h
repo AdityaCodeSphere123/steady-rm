@@ -167,6 +167,11 @@ private:
     double prepare_seconds_ = 0;
     double mu_loo_ = 0;
     void estimate_mu_loo();
+    void build_postings();
+    struct Marks;
+    std::vector<uint16_t> qmark_;          // term -> query slot during a call
+    std::vector<uint64_t> post_off_;       // per-term offsets into post_
+    std::vector<uint32_t> post_;           // doc lists (unsorted within a term)
 
     StrTable docids_;                   // id -> first doc index
     std::vector<int32_t> docid_to_doc_;
