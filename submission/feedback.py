@@ -1,804 +1,263 @@
 """
 submission/feedback.py -- THE REQUIRED COMPETITION ENTRYPOINT.
 
-Three public functions, signatures fixed by the assignment (Section 5):
-
     prepare(corpus_path)
     score_candidates(query, candidate_doc_ids, k=10)
     relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k=10)
 
-Everything else in this file is private implementation.
+All retrieval work is done in C++ (submission/cpp/, loaded with ctypes).
+The shared library is compiled from source on first import, on the machine
+running the harness, into submission/_build/ (or the temp dir if that is
+read-only). Its file name carries a hash of sources + flags, so edited
+sources are always rebuilt and a binary built elsewhere is never loaded
+(a -march=native binary from another CPU could crash the process). If
+building or loading fails, the module falls back to the pure-Python
+implementation in _feedback_py.py, so the entrypoints always work.
 
------------------------------------------------------------------------
-DESIGN SUMMARY
------------------------------------------------------------------------
+Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
+  Track A  Dirichlet query likelihood (JM optional) + sequential-dependence
+           proximity features + rank prior from the candidate order,
+           fused by within-pool z-score.
+  Track B  RM3: lambda * query part + (1 - lambda) * relevance model;
+           the relevance model is RM1, RM2 or a mixture of the two.
+  Track C  Robustness from how the seed is weighted and filtered:
+           P(D|Q)-weighted seeds, query anchoring, term consensus, RM2's
+           co-occurrence requirement, optional outlier down-weighting and
+           adaptive lambda. Nothing reads score_candidates() output or keys
+           off the query text. The only cache is collection counts of query
+           term PAIRS: background statistics, independent of any seed.
 
-Track A -- score_candidates()
-    Dirichlet-smoothed unigram query likelihood, with mu derived from the
-    collection's own average document length rather than hard-coded, and
-    a small rank prior taken from the order of `candidate_doc_ids` (an
-    input we were handed, and an independent evidence source; fused by
-    within-pool z-score, weight RANK_PRIOR_WEIGHT).
-
-Track B -- relevance_model_feedback(), clean seed
-    Textbook RM1 -> RM3. P(w|R) = sum_D P(w|D) P(D|Q) over the seed set,
-    then P_RM3(w) = lam P(w|Q) + (1-lam) P(w|R), then rank the candidate
-    pool by cross-entropy against P_RM3 (the same ranking as the primer's
-    KL formulation, minus a per-query constant).
-
-Track C -- the same function, contaminated seed
-    Track C is a RETENTION RATIO, not a raw score (harness/leaderboard.py),
-    so the target is "expand enough to gain on B, but have the expansion
-    barely move when the seed is contaminated". Five devices, each
-    independently switchable so the report can ablate them one at a time:
-
-      1. SOFT SEED WEIGHTING. P(D|Q) is a softmax over each seed
-         document's per-query-term mean log-likelihood, sharpened by
-         WEIGHT_BETA. Uniform-random contamination drawn from the
-         candidate pool comes overwhelmingly from the pool's tail, so
-         those documents arrive with low P(D|Q) and contribute almost
-         nothing. This is plain RM1 as Lavrenko & Croft defined it -- the
-         robustness is a property of the original formulation, not a
-         bolt-on.
-      2. RELATIVE-WEIGHT TRIMMING. Seed documents whose normalised weight
-         falls below TRIM_FLOOR x the best seed document's are dropped
-         before estimation.
-      3. QUERY-ANCHORED SEED FILTER. If at least MIN_ANCHORED seed
-         documents contain a query term, estimate from only those. This
-         raises the price of an attack: a poisoned document has to carry
-         query terms to get a vote at all.
-      4. TERM CONSENSUS. An expansion term must be attested by at least
-         MIN_TERM_SUPPORT distinct surviving seed documents, so one
-         contaminated document can no longer introduce a term by itself,
-         however often it repeats it.
-      5. ADAPTIVE LAMBDA. lam is not a constant. It moves between
-         LAMBDA_MIN and LAMBDA_MAX according to two signals computed from
-         the seed alone -- topical coherence of the surviving seed, and
-         the clarity of the estimated relevance model against the
-         collection background. An incoherent, low-clarity seed pulls lam
-         towards 1.0, i.e. back towards the query the user actually typed.
-
-    On (5) and the anti-gaming rules: this reads only (query, seed
-    documents, collection statistics). It never caches score_candidates()
-    output, never keys off query text, and cannot distinguish a clean call
-    from a perturbed one -- it only estimates how internally coherent the
-    seed it was handed happens to be. That is query-performance
-    prediction, the legitimate version of this; see
-    docs/SUBMISSION_INTERFACE.md, "call-order independence", for the
-    illegitimate version.
-
-Conformance: both retrieval functions return only doc_ids drawn from
-`candidate_doc_ids`, never duplicated, sorted by score descending, with
-deterministic doc_id tie-breaking.
+RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
+import ctypes
+import hashlib
+import importlib.util
 import json
-import math
 import os
-import re
-from collections import Counter, defaultdict
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+import subprocess
+import sys
+import tempfile
+from typing import Dict, List, Optional, Sequence, Tuple
 
-# ---------------------------------------------------------------------------
-# Tunable constants. Everything the report discusses is named here.
-# ---------------------------------------------------------------------------
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_CPP = os.path.join(_HERE, "cpp")
+_SOURCES = ["rm_engine.cpp", "analysis.cpp", "c_api.cpp"]
+_HEADERS = ["rm_engine.h", "util.h", "analysis.h"]
+_FLAG_SETS = [
+    ["-std=c++17", "-O3", "-march=native", "-fPIC", "-pthread", "-shared"],
+    ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
+]
 
-# --- Track A: query likelihood --------------------------------------------
-# Dirichlet mu. Zhai & Lafferty (SIGIR 2001) find the optimum tracks
-# average document length rather than sitting at one universal value, so
-# mu is derived in prepare() as MU_AVGDL_FACTOR * avgdl, clamped. The
-# clamp matters more than the factor: it keeps a pathological collection
-# (near-duplicate titles at one end, full articles at the other) inside a
-# range where Dirichlet still behaves.
-MU_AVGDL_FACTOR = 12.0
-MU_MIN, MU_MAX = 250.0, 2500.0
+# Final parameters (names as in cpp/rm_engine.h); anything not listed keeps
+# the C++ default. Tuned on a Cranfield proxy -- RETUNE ON THE DEV SET with
+# tools/sweep.py before the deadline.
+PARAMS: Dict[str, float] = {
+    "stemmer": 2, "doc_stop": 0,
+    "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
+    "smoothing": 0, "mu": 0, "mu_factor": 6, "mu_min": 250, "mu_max": 2500,
+    "w_od": 0.20, "w_uw": 0.10, "uw_window": 8,
+    "prior_w": 0.30,
+    "rm_variant": 3, "rm2_mix": 0.0,
+    "fb_mu": 0, "fb_docs": 10, "fb_terms": 20, "beta": 1.0,
+    "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
+    "agree_gamma": 1.0, "lambda": -1,
+    "fb_sdm": 1, "fb_prior_w": -1,
+}
 
-# Weight on the rank prior carried by the order of candidate_doc_ids,
-# fused with the LM score after within-pool z-normalisation. 0.0 disables
-# it and leaves a pure LM ranking.
-RANK_PRIOR_WEIGHT = 0.30
-RANK_PRIOR_K = 60.0  # the 60 of standard reciprocal-rank fusion
-
-# Drop stopwords from queries only once the query is long enough that they
-# stop being discriminative. Short keyword queries keep every term.
-QUERY_STOPWORD_MIN_LEN = 4
-
-# --- Tracks B/C: relevance model ------------------------------------------
-FEEDBACK_MU = 400.0        # lighter smoothing when reading a seed document
-MAX_FEEDBACK_DOCS = 10     # cap on surviving seed documents
-MAX_EXPANSION_TERMS = 60   # vocabulary of the truncated relevance model
-
-WEIGHT_BETA = 1.6          # softmax sharpness on P(D|Q)
-TRIM_FLOOR = 0.15          # drop seed docs below this x the best weight
-MIN_TERM_SUPPORT = 2       # distinct seed docs that must attest a term
-MIN_ANCHORED = 2           # query-anchored filter needs this many docs
-PER_DOC_TERM_CAP = 0.20    # winsorise one document's P(w|D) contribution
-
-LAMBDA_MIN, LAMBDA_MAX = 0.45, 0.85   # adaptive interpolation range
-LAMBDA_FIXED: Optional[float] = None  # set a float to pin lam (ablations)
-
-# Expansion terms rarer than this in the collection are almost always
-# corpus junk (OCR fragments, identifiers) rather than topical signal.
-MIN_EXPANSION_CF = 2
-
-# Ablation switches, all default-on. The report's ablation table flips
-# these one at a time.
-USE_SOFT_WEIGHTS = True
-USE_TRIMMING = True
-USE_QUERY_ANCHOR = True
-USE_TERM_CONSENSUS = True
-USE_ADAPTIVE_LAMBDA = True
-USE_STEMMER = True
-
-_LOG_FLOOR = -50.0  # same floor convention as lm_utils
-
-# ---------------------------------------------------------------------------
-# Tokenisation
-# ---------------------------------------------------------------------------
-
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-# A short, conventional stoplist. Applied only to QUERIES and to
-# expansion-term selection, never to documents: removing stopwords from
-# documents would distort |D| and the background model for no gain, since
-# Dirichlet smoothing already drives a stopword's contribution to roughly
-# the same value for every document.
-_STOPWORDS = frozenset("""
-a about above after again against all am an and any are as at be because been
-before being below between both but by can cannot could did do does doing down
-during each few for from further had has have having he her here hers herself
-him himself his how i if in into is it its itself just me more most my myself
-no nor not now of off on once only or other our ours ourselves out over own
-same she should so some such than that the their theirs them themselves then
-there these they this those through to too under until up very was we were what
-when where which while who whom why will with you your yours yourself yourselves
-""".split())
-
-_stem_cache: Dict[str, str] = {}
-
-
-def _s_stem(word: str) -> str:
-    """Conservative plural stripper (the "S-stemmer", Harman 1991).
-
-    Deliberately not Porter. On a ~100-document candidate pool the win
-    from stemming is recall of morphological variants of query terms;
-    Porter's aggressive conflations (organization/organ) buy little of
-    that and cost precision, and a mis-conflation inside the RELEVANCE
-    MODEL is worse than one inside a first-pass ranker, because the wrong
-    term is then promoted into the expanded query for every candidate at
-    once.
-    """
-    if len(word) < 4 or word[-1] != "s":
-        return word
-    if word.endswith(("ss", "us", "is")):
-        return word
-    if word.endswith("ies") and len(word) > 4:
-        return word[:-3] + "y"
-    if word.endswith("es") and len(word) > 4:
-        if word[-3] in "sxzh":
-            return word[:-2]
-        return word[:-1]
-    return word[:-1]
-
-
-def tokenize(text: str) -> List[str]:
-    """The one tokeniser, applied identically to documents and queries."""
-    raw = _TOKEN_RE.findall(text.lower())
-    if not USE_STEMMER:
-        return [t for t in raw if len(t) > 1]
-    cache = _stem_cache
-    out = []
-    for t in raw:
-        if len(t) < 2:
-            continue
-        s = cache.get(t)
-        if s is None:
-            s = _s_stem(t)
-            cache[t] = s
-        out.append(s)
-    return out
-
-
-def _query_terms(query: str) -> List[str]:
-    """Query tokens, with stopwords dropped only for verbose queries."""
-    terms = tokenize(query)
-    if len(terms) >= QUERY_STOPWORD_MIN_LEN:
-        content = [t for t in terms if t not in _STOPWORDS]
-        if content:
-            return content
-    return terms
+_lib = None
+_py = None
 
 
 # ---------------------------------------------------------------------------
-# Collection statistics
+# Build / load
 # ---------------------------------------------------------------------------
 
+def _digest(flags: Sequence[str]) -> str:
+    h = hashlib.sha256()
+    for name in _SOURCES + _HEADERS:
+        with open(os.path.join(_CPP, name), "rb") as fh:
+            h.update(name.encode()); h.update(fh.read())
+    h.update(" ".join(flags).encode())
+    return h.hexdigest()[:16]
 
-def _clamp(x: float, lo: float, hi: float) -> float:
-    return lo if x < lo else hi if x > hi else x
 
-
-class _Collection:
-    """Collection-wide unigram statistics from one pass over the corpus.
-
-    Per-document term counts are NOT retained from that pass. At most
-    ~100 documents per query are ever scored, so we keep byte offsets and
-    re-read the handful we are actually asked about, caching as we go.
-    Peak memory during prepare() is then proportional to the vocabulary
-    rather than to the corpus text, which is what keeps a
-    several-hundred-thousand-document collection comfortable inside the
-    10-minute prepare() budget (docs/GRADING.md).
-    """
-
-    __slots__ = (
-        "corpus_path", "cf", "total_tokens", "doc_len", "offsets",
-        "n_docs", "avgdl", "mu", "_counts_cache", "_texts",
-    )
-
-    def __init__(self) -> None:
-        self.corpus_path: str = ""
-        self.cf: Counter = Counter()
-        self.total_tokens: int = 0
-        self.doc_len: Dict[str, int] = {}
-        self.offsets: Dict[str, Tuple[int, int]] = {}
-        self.n_docs: int = 0
-        self.avgdl: float = 0.0
-        self.mu: float = 1000.0
-        self._counts_cache: Dict[str, Counter] = {}
-        self._texts: Dict[str, str] = {}
-
-    @classmethod
-    def from_path(cls, corpus_path: str) -> "_Collection":
-        self = cls()
-        self.corpus_path = corpus_path
-        cf = self.cf
-        doc_len = self.doc_len
-        offsets = self.offsets
-        total = 0
-
-        with open(corpus_path, "rb") as fh:
-            pos = 0
-            for raw in fh:
-                n = len(raw)
-                line = raw.strip()
-                if not line:
-                    pos += n
-                    continue
-                obj = json.loads(line)
-                doc_id = obj["doc_id"]
-                tokens = tokenize(obj.get("text", "") or "")
-                cf.update(tokens)
-                doc_len[doc_id] = len(tokens)
-                offsets[doc_id] = (pos, n)
-                total += len(tokens)
-                pos += n
-
-        self.total_tokens = total
-        self.n_docs = len(doc_len)
-        self.avgdl = (total / self.n_docs) if self.n_docs else 0.0
-        self.mu = (
-            _clamp(MU_AVGDL_FACTOR * self.avgdl, MU_MIN, MU_MAX)
-            if self.avgdl else 1000.0
-        )
-        return self
-
-    def p_collection(self, term: str) -> float:
-        if not self.total_tokens:
-            return 0.0
-        return self.cf.get(term, 0) / self.total_tokens
-
-    def counts(self, doc_id: str) -> Counter:
-        """Term counts for one document, read and cached on first use."""
-        hit = self._counts_cache.get(doc_id)
-        if hit is not None:
-            return hit
-        text = self._text(doc_id)
-        counts = Counter(tokenize(text)) if text else Counter()
-        self._counts_cache[doc_id] = counts
-        return counts
-
-    def _text(self, doc_id: str) -> str:
-        cached = self._texts.get(doc_id)
-        if cached is not None:
-            return cached
-        span = self.offsets.get(doc_id)
-        if span is None:
-            return ""
-        offset, length = span
+def _compile(out: str, flags: Sequence[str]) -> bool:
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    tmp = f"{out}.{os.getpid()}.tmp"
+    cmd = [os.environ.get("CXX", "g++"), *flags, *[os.path.join(_CPP, s) for s in _SOURCES], "-o", tmp]
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if r.returncode != 0 or not os.path.exists(tmp):
         try:
-            with open(self.corpus_path, "rb") as fh:
-                fh.seek(offset)
-                raw = fh.read(length)
-            text = json.loads(raw.strip()).get("text", "") or ""
-        except (OSError, ValueError, KeyError):
-            text = ""
-        self._texts[doc_id] = text
-        return text
-
-    def length(self, doc_id: str) -> int:
-        return self.doc_len.get(doc_id, 0)
+            os.remove(tmp)
+        except OSError:
+            pass
+        return False
+    os.replace(tmp, out)  # atomic: a concurrent importer never sees half a file
+    return True
 
 
-_STATS: Optional[_Collection] = None
+def _declare(lib) -> None:
+    c = ctypes
+    I32, F64 = c.POINTER(c.c_int32), c.POINTER(c.c_double)
+    sig = {
+        "rm_prepare": ([c.c_char_p], c.c_int),
+        "rm_last_error": ([], c.c_char_p),
+        "rm_set_param": ([c.c_char_p, c.c_double], c.c_int),
+        "rm_get_param": ([c.c_char_p, F64], c.c_int),
+        "rm_stats": ([c.c_char_p, c.c_int], c.c_int),
+        "rm_score": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
+        "rm_feedback": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
+        "rm_explain": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_char_p, c.c_int], c.c_int),
+        "rm_relevance_model": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, c.c_char_p, c.c_int], c.c_int),
+        "rm_analyze": ([c.c_char_p, c.c_char_p, c.c_int], c.c_int),
+    }
+    for name, (args, res) in sig.items():
+        fn = getattr(lib, name)
+        fn.argtypes, fn.restype = args, res
+
+
+def _load_native():
+    if os.environ.get("RM_FORCE_PYTHON") == "1":
+        return None
+    dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
+    for flags in _FLAG_SETS:
+        try:
+            digest = _digest(flags)
+        except OSError:
+            return None
+        for d in dirs:
+            path = os.path.join(d, f"librm_{digest}.so")
+            try:
+                if not os.path.exists(path) and not _compile(path, flags):
+                    continue
+                lib = ctypes.CDLL(path)
+                _declare(lib)
+                return lib
+            except OSError:
+                continue
+    return None
+
+
+def _load_fallback():
+    spec = importlib.util.spec_from_file_location("_rm_feedback_py", os.path.join(_HERE, "_feedback_py.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ---------------------------------------------------------------------------
-# Required entrypoint 1: prepare()
+# Helpers (not part of the graded interface)
 # ---------------------------------------------------------------------------
 
+def backend() -> str:
+    return "cpp" if _lib is not None else "python"
+
+
+def set_params(**kw: float) -> None:
+    """Override engine parameters by name (tools/sweep.py)."""
+    if _lib is None:
+        return
+    for k, v in kw.items():
+        if _lib.rm_set_param(k.encode(), float(v)) != 0:
+            raise KeyError(f"unknown parameter {k!r}")
+
+
+def get_param(name: str) -> float:
+    v = ctypes.c_double()
+    if _lib is None or _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
+        raise KeyError(name)
+    return v.value
+
+
+def _json_call(fn, *args):
+    size = 1 << 16
+    while True:
+        buf = ctypes.create_string_buffer(size)
+        n = fn(*args, buf, size)
+        if n >= 0:
+            return json.loads(buf.value.decode("utf-8", "replace"))
+        size = -n + 16
+
+
+def _join(ids: Sequence[str]) -> Tuple[bytes, int]:
+    ids = list(ids)
+    return "\n".join(ids).encode("utf-8"), len(ids)
+
+
+def stats() -> dict:
+    return _json_call(_lib.rm_stats) if _lib is not None else {}
+
+
+def analyze(query: str) -> List[str]:
+    """The query terms after tokenising, stopping and stemming."""
+    return _json_call(_lib.rm_analyze, query.encode()) if _lib is not None else []
+
+
+def explain_feedback(query: str, pseudo_relevant_doc_ids: List[str],
+                     candidate_doc_ids: Optional[List[str]] = None) -> dict:
+    """Seed weights, estimated model, lambda for one feedback call."""
+    if _lib is None:
+        return _py.explain_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids or [])
+    s, ns = _join(pseudo_relevant_doc_ids)
+    c, nc = _join(candidate_doc_ids or [])
+    return _json_call(_lib.rm_explain, query.encode(), s, ns, c, nc)
+
+
+def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int = 1) -> List[Tuple[str, float]]:
+    """The estimated P(w|R) alone: variant 1 = RM1, 2 = RM2."""
+    s, ns = _join(pseudo_relevant_doc_ids)
+    return [tuple(x) for x in _json_call(_lib.rm_relevance_model, query.encode(), s, ns, int(variant))]
+
+
+# ---------------------------------------------------------------------------
+# Required entrypoints
+# ---------------------------------------------------------------------------
 
 def prepare(corpus_path: str) -> None:
-    """One pass over the corpus to build background statistics.
-
-    Idempotent: re-calling with the same path is a no-op, so the
-    conformance tests' repeated prepare() calls cost nothing.
-    """
-    global _STATS
-    path = corpus_path
-    if os.path.isdir(path):
-        nested = os.path.join(path, "corpus.jsonl")
-        if os.path.isfile(nested):
-            path = nested
-    if _STATS is not None and _STATS.corpus_path == path:
-        return
-    _STATS = _Collection.from_path(path)
+    """One pass over the corpus (4 threads): tokenise, build P(w|C).
+    Idempotent for the same path."""
+    if _lib is None:
+        return _py.prepare(corpus_path)
+    if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
+        raise RuntimeError(_lib.rm_last_error().decode())
 
 
-def _require_stats() -> _Collection:
-    if _STATS is None:
-        raise RuntimeError(
-            "prepare(corpus_path) must be called before any retrieval call; "
-            "the harness always does this."
-        )
-    return _STATS
-
-
-# ---------------------------------------------------------------------------
-# Scoring primitives
-# ---------------------------------------------------------------------------
-
-
-def _dirichlet_log_prob(tf: int, dlen: int, p_c: float, mu: float) -> float:
-    num = tf + mu * p_c
-    den = dlen + mu
-    if num <= 0.0 or den <= 0.0:
-        return _LOG_FLOOR
-    return math.log(num / den)
-
-
-def _query_likelihood(
-    terms: Sequence[str], doc_ids: Sequence[str], stats: _Collection
-) -> Dict[str, float]:
-    """log P(Q|D) for each document, Dirichlet-smoothed.
-
-    P(w|C) is looked up once per query term rather than once per
-    (term, document) pair -- with ~100 candidates that is the difference
-    between ~100 and ~10,000 dictionary probes per query.
-    """
-    mu = stats.mu
-    p_c = {t: stats.p_collection(t) for t in set(terms)}
-    out: Dict[str, float] = {}
-    for doc_id in doc_ids:
-        counts = stats.counts(doc_id)
-        dlen = stats.length(doc_id)
-        total = 0.0
-        for t in terms:
-            total += _dirichlet_log_prob(counts.get(t, 0), dlen, p_c[t], mu)
-        out[doc_id] = total
-    return out
-
-
-def _z_normalise(values: Dict[str, float]) -> Dict[str, float]:
-    """Within-pool z-scores. A degenerate (all-equal) pool maps to zeros,
-    making fusion a no-op there rather than an amplifier of noise."""
-    if not values:
-        return {}
-    xs = list(values.values())
-    n = len(xs)
-    mean = sum(xs) / n
-    var = sum((x - mean) ** 2 for x in xs) / n
-    sd = math.sqrt(var)
-    if sd < 1e-12:
-        return {key: 0.0 for key in values}
-    return {key: (x - mean) / sd for key, x in values.items()}
-
-
-def _rank_prior(doc_ids: Sequence[str]) -> Dict[str, float]:
-    """Reciprocal-rank prior from the order of the provided pool.
-
-    `candidate_doc_ids` arrives best-first from the reference retriever
-    (harness/candidates_io.py). That ordering is an input, not a secret,
-    and it is evidence from a source independent of our own LM -- exactly
-    the condition under which rank fusion reliably helps. It is fused at
-    a deliberately modest weight and z-normalised first, so a pool whose
-    order is uninformative (the toy set, where most candidates are tied
-    at 0.0) contributes a flat, harmless signal rather than a misleading
-    one.
-    """
-    return {doc_id: 1.0 / (RANK_PRIOR_K + i) for i, doc_id in enumerate(doc_ids)}
-
-
-def _fuse_and_rank(
-    lm_scores: Dict[str, float], doc_ids: Sequence[str], k: int
-) -> List[Tuple[str, float]]:
-    """Fuse LM score with the pool's rank prior and return the top k.
-    Ties break on doc_id so the output is deterministic across runs."""
-    if not lm_scores:
+def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
+    k = min(int(k), len(pool))
+    if k <= 0:
         return []
-    if RANK_PRIOR_WEIGHT <= 0.0:
-        fused = dict(lm_scores)
-    else:
-        z_lm = _z_normalise(lm_scores)
-        z_prior = _z_normalise(_rank_prior(doc_ids))
-        fused = {
-            doc_id: z_lm[doc_id] + RANK_PRIOR_WEIGHT * z_prior.get(doc_id, 0.0)
-            for doc_id in lm_scores
-        }
-    ranked = sorted(fused.items(), key=lambda kv: (-kv[1], kv[0]))
-    return ranked[: max(0, k)]
+    c, nc = _join(pool)
+    idx = (ctypes.c_int32 * k)()
+    sc = (ctypes.c_double * k)()
+    n = fn(*args, c, nc, k, idx, sc)
+    if n < 0:
+        raise RuntimeError(_lib.rm_last_error().decode())
+    return [(pool[idx[i]], float(sc[i])) for i in range(n)]
 
 
-def _dedup(doc_ids: Iterable[str]) -> List[str]:
-    seen = set()
-    out = []
-    for d in doc_ids:
-        if d not in seen:
-            seen.add(d)
-            out.append(d)
-    return out
+def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
+    """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
+    if _lib is None:
+        return _py.score_candidates(query, candidate_doc_ids, k)
+    return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
-# ---------------------------------------------------------------------------
-# Required entrypoint 2: score_candidates()  [Track A]
-# ---------------------------------------------------------------------------
+def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
+                             candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
+    """Rerank candidate_doc_ids with a relevance model estimated from
+    pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
+    output is drawn from candidate_doc_ids only."""
+    if _lib is None:
+        return _py.relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
+    s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
+    return _run(_lib.rm_feedback, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), s, ns)
 
 
-def score_candidates(
-    query: str, candidate_doc_ids: List[str], k: int = 10
-) -> List[Tuple[str, float]]:
-    """Rerank the provided candidate pool with a Dirichlet-smoothed
-    unigram query-likelihood model, fused with the pool's own rank prior.
-    Returns up to k (doc_id, score) pairs, best first, drawn only from
-    `candidate_doc_ids`."""
-    stats = _require_stats()
-    pool = _dedup(candidate_doc_ids)
-    if not pool:
-        return []
-    terms = _query_terms(query)
-    if not terms:
-        # No usable query terms: fall back to the pool's own order rather
-        # than returning nothing, which would score 0 on every metric.
-        return [(doc_id, -float(i)) for i, doc_id in enumerate(pool[: max(0, k)])]
-    lm = _query_likelihood(terms, pool, stats)
-    return _fuse_and_rank(lm, pool, k)
-
-
-# ---------------------------------------------------------------------------
-# Relevance model: RM1 -> RM3
-# ---------------------------------------------------------------------------
-
-
-def _seed_weights(
-    terms: Sequence[str], seed_ids: Sequence[str], stats: _Collection
-) -> List[Tuple[str, float]]:
-    """P(D|Q) over the seed set: softmax of per-query-term mean log
-    likelihood, then trimmed.
-
-    Dividing by |Q| before the softmax matters: it makes WEIGHT_BETA mean
-    the same thing for a two-word query and a twelve-word one, so the
-    sharpness of the weighting does not silently drift with query length.
-    """
-    seed = [d for d in _dedup(seed_ids) if d in stats.doc_len]
-    if not seed:
-        return []
-    raw = _query_likelihood(terms, seed, stats)
-    n_terms = max(1, len(terms))
-    per_term = {d: raw[d] / n_terms for d in seed}
-
-    if not USE_SOFT_WEIGHTS:
-        w = 1.0 / len(seed)
-        return [(d, w) for d in seed]
-
-    best = max(per_term.values())
-    exp_w = {d: math.exp(WEIGHT_BETA * (s - best)) for d, s in per_term.items()}
-
-    if USE_TRIMMING:
-        cutoff = TRIM_FLOOR * max(exp_w.values())
-        kept = {d: w for d, w in exp_w.items() if w >= cutoff}
-        if kept:
-            exp_w = kept
-
-    ordered = sorted(exp_w.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_FEEDBACK_DOCS]
-    total = sum(w for _d, w in ordered)
-    if total <= 0.0:
-        w = 1.0 / len(ordered)
-        return [(d, w) for d, _ in ordered]
-    return [(d, w / total) for d, w in ordered]
-
-
-def _apply_query_anchor(
-    seed_ids: Sequence[str], terms: Sequence[str], stats: _Collection
-) -> List[str]:
-    """Keep only seed documents containing at least one query term,
-    provided enough of them do.
-
-    A poisoned seed document sharing no vocabulary with the query has no
-    business informing what "documents relevant to this query" look like.
-    Gated on MIN_ANCHORED so a genuinely hard query, where few documents
-    match any query term literally, is not left with an empty feedback set.
-    """
-    if not USE_QUERY_ANCHOR:
-        return list(seed_ids)
-    term_set = set(terms)
-    anchored = [d for d in seed_ids if any(t in stats.counts(d) for t in term_set)]
-    if len(anchored) >= MIN_ANCHORED:
-        return anchored
-    return list(seed_ids)
-
-
-def _estimate_rm1(
-    weighted_seed: Sequence[Tuple[str, float]], stats: _Collection
-) -> Dict[str, float]:
-    """RM1: P(w|R) = sum_D P(w|D) P(D|Q), with per-document winsorising
-    and term-consensus filtering, truncated to MAX_EXPANSION_TERMS."""
-    if not weighted_seed:
-        return {}
-
-    accum: Dict[str, float] = defaultdict(float)
-    support: Dict[str, int] = defaultdict(int)
-
-    for doc_id, weight in weighted_seed:
-        counts = stats.counts(doc_id)
-        dlen = stats.length(doc_id)
-        denom = dlen + FEEDBACK_MU
-        if denom <= 0:
-            continue
-        for term, tf in counts.items():
-            p_wd = (tf + FEEDBACK_MU * stats.p_collection(term)) / denom
-            if p_wd > PER_DOC_TERM_CAP:
-                p_wd = PER_DOC_TERM_CAP
-            accum[term] += weight * p_wd
-            support[term] += 1
-
-    min_support = (
-        MIN_TERM_SUPPORT if (USE_TERM_CONSENSUS and len(weighted_seed) >= 3) else 1
-    )
-    filtered = {
-        term: mass
-        for term, mass in accum.items()
-        if support[term] >= min_support
-        and term not in _STOPWORDS
-        and stats.cf.get(term, 0) >= MIN_EXPANSION_CF
-    }
-    if not filtered:
-        filtered = {t: m for t, m in accum.items() if t not in _STOPWORDS}
-    if not filtered:
-        return {}
-
-    top = sorted(filtered.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_EXPANSION_TERMS]
-    total = sum(m for _t, m in top)
-    if total <= 0.0:
-        return {}
-    return {t: m / total for t, m in top}
-
-
-def _seed_coherence(
-    weighted_seed: Sequence[Tuple[str, float]], stats: _Collection
-) -> float:
-    """Mean pairwise cosine similarity of the surviving seed documents, on
-    IDF-weighted term vectors, mapped to [0, 1].
-
-    Documents about one topic look alike; a set into which unrelated
-    documents have been swapped does not. Computed from the seed alone --
-    no judgments, and no knowledge of whether this call is clean or
-    perturbed.
-    """
-    docs = [d for d, _w in weighted_seed]
-    if len(docs) < 2:
-        return 0.5
-    n_docs = max(1, stats.n_docs)
-    vectors = []
-    for doc_id in docs:
-        counts = stats.counts(doc_id)
-        if not counts:
-            vectors.append(({}, 0.0))
-            continue
-        vec = {}
-        for term, tf in counts.items():
-            if term in _STOPWORDS:
-                continue
-            cf = stats.cf.get(term, 0)
-            if cf <= 0:
-                continue
-            idf = math.log(1.0 + n_docs / cf)
-            vec[term] = (1.0 + math.log(tf)) * idf
-        norm = math.sqrt(sum(v * v for v in vec.values()))
-        vectors.append((vec, norm))
-
-    sims, pairs = 0.0, 0
-    for i in range(len(vectors)):
-        vi, ni = vectors[i]
-        if ni <= 0.0:
-            continue
-        for j in range(i + 1, len(vectors)):
-            vj, nj = vectors[j]
-            if nj <= 0.0:
-                continue
-            small, large = (vi, vj) if len(vi) <= len(vj) else (vj, vi)
-            dot = 0.0
-            for term, val in small.items():
-                other = large.get(term)
-                if other:
-                    dot += val * other
-            sims += dot / (ni * nj)
-            pairs += 1
-    if pairs == 0:
-        return 0.5
-    return _clamp(sims / pairs, 0.0, 1.0)
-
-
-def _model_clarity(rm: Dict[str, float], stats: _Collection) -> float:
-    """KL(P(.|R) || P(.|C)), squashed to [0, 1].
-
-    The clarity score (Cronen-Townsend et al., SIGIR 2002) used as a drift
-    detector: a relevance model estimated from a coherent topical set sits
-    far from the collection background; one estimated from a set of
-    unrelated documents collapses towards it.
-    """
-    if not rm:
-        return 0.0
-    kl = 0.0
-    for term, p_r in rm.items():
-        p_c = stats.p_collection(term)
-        if p_c <= 0.0 or p_r <= 0.0:
-            continue
-        kl += p_r * math.log(p_r / p_c)
-    # ~6 nats is a strongly focused model on a typical collection; the
-    # exact scale only sets where the middle of the lambda range falls.
-    return _clamp(kl / 6.0, 0.0, 1.0)
-
-
-def _adaptive_lambda(
-    weighted_seed: Sequence[Tuple[str, float]], rm: Dict[str, float], stats: _Collection
-) -> float:
-    """Pick the RM3 interpolation weight from how trustworthy the seed looks.
-
-    lambda is the weight on the ORIGINAL query, so high lambda = cautious.
-    Quality 1.0 -> LAMBDA_MIN (lean on the relevance model);
-    quality 0.0 -> LAMBDA_MAX (fall back towards what the user typed).
-    """
-    if LAMBDA_FIXED is not None:
-        return _clamp(LAMBDA_FIXED, 0.0, 1.0)
-    if not USE_ADAPTIVE_LAMBDA:
-        return 0.5 * (LAMBDA_MIN + LAMBDA_MAX)
-    if not weighted_seed or not rm:
-        return 1.0  # nothing usable: pure query likelihood
-
-    coherence = _seed_coherence(weighted_seed, stats)
-    clarity = _model_clarity(rm, stats)
-    # Coherence is the more direct contamination signal; clarity mostly
-    # guards the case where a seed is self-similar but generic.
-    quality = _clamp(0.65 * coherence + 0.35 * clarity, 0.0, 1.0)
-    return LAMBDA_MAX - (LAMBDA_MAX - LAMBDA_MIN) * quality
-
-
-def _query_model(terms: Sequence[str]) -> Dict[str, float]:
-    """Maximum-likelihood P(w|Q) over the query's own terms."""
-    counts = Counter(terms)
-    total = sum(counts.values())
-    if total == 0:
-        return {}
-    return {t: c / total for t, c in counts.items()}
-
-
-def _rm3_interpolate(
-    rm: Dict[str, float], qm: Dict[str, float], lam: float
-) -> Dict[str, float]:
-    """P_RM3(w) = lam P(w|Q) + (1 - lam) P(w|R)."""
-    out: Dict[str, float] = {}
-    for term, p in qm.items():
-        out[term] = lam * p
-    for term, p in rm.items():
-        out[term] = out.get(term, 0.0) + (1.0 - lam) * p
-    total = sum(out.values())
-    if total <= 0.0:
-        return dict(qm)
-    return {t: p / total for t, p in out.items()}
-
-
-def _rank_by_model(
-    model: Dict[str, float], doc_ids: Sequence[str], stats: _Collection, k: int
-) -> List[Tuple[str, float]]:
-    """Rank by cross-entropy: sum_w P_model(w) log P(w|D), Dirichlet-smoothed.
-
-    This is -KL(P_model || P(.|D)) plus the model's own entropy, which is
-    constant across documents for a given query -- the same ranking as the
-    primer's KL formulation, computed without the constant.
-    """
-    if not model:
-        return []
-    mu = stats.mu
-    p_c = {t: stats.p_collection(t) for t in model}
-    scores: Dict[str, float] = {}
-    for doc_id in doc_ids:
-        counts = stats.counts(doc_id)
-        dlen = stats.length(doc_id)
-        total = 0.0
-        for term, weight in model.items():
-            total += weight * _dirichlet_log_prob(
-                counts.get(term, 0), dlen, p_c[term], mu
-            )
-        scores[doc_id] = total
-    return _fuse_and_rank(scores, doc_ids, k)
-
-
-# ---------------------------------------------------------------------------
-# Required entrypoint 3: relevance_model_feedback()  [Tracks B and C]
-# ---------------------------------------------------------------------------
-
-
-def relevance_model_feedback(
-    query: str,
-    pseudo_relevant_doc_ids: List[str],
-    candidate_doc_ids: List[str],
-    k: int = 10,
-) -> List[Tuple[str, float]]:
-    """Rerank `candidate_doc_ids` under an RM3 model estimated from
-    `pseudo_relevant_doc_ids`.
-
-    The seed only ever feeds estimation; the pool being ranked and
-    returned from is `candidate_doc_ids`, always.
-    """
-    stats = _require_stats()
-    pool = _dedup(candidate_doc_ids)
-    if not pool:
-        return []
-    terms = _query_terms(query)
-    if not terms:
-        return [(doc_id, -float(i)) for i, doc_id in enumerate(pool[: max(0, k)])]
-
-    seed = [d for d in _dedup(pseudo_relevant_doc_ids) if d in stats.doc_len]
-    if not seed:
-        # No usable feedback: this is exactly query likelihood, which is
-        # the right answer here, not a degraded one.
-        return score_candidates(query, candidate_doc_ids, k)
-
-    seed = _apply_query_anchor(seed, terms, stats)
-    weighted_seed = _seed_weights(terms, seed, stats)
-    rm = _estimate_rm1(weighted_seed, stats)
-    if not rm:
-        return score_candidates(query, candidate_doc_ids, k)
-
-    lam = _adaptive_lambda(weighted_seed, rm, stats)
-    model = _rm3_interpolate(rm, _query_model(terms), lam)
-    return _rank_by_model(model, pool, stats, k)
-
-
-# ---------------------------------------------------------------------------
-# Introspection helper for the report's ablation tables. Not part of the
-# graded interface; the harness never calls this.
-# ---------------------------------------------------------------------------
-
-
-def explain_feedback(
-    query: str, pseudo_relevant_doc_ids: List[str], candidate_doc_ids: List[str]
-) -> dict:
-    """Return the intermediate quantities behind one feedback call."""
-    stats = _require_stats()
-    terms = _query_terms(query)
-    seed = [d for d in _dedup(pseudo_relevant_doc_ids) if d in stats.doc_len]
-    anchored = _apply_query_anchor(seed, terms, stats)
-    weighted_seed = _seed_weights(terms, anchored, stats)
-    rm = _estimate_rm1(weighted_seed, stats)
-    lam = _adaptive_lambda(weighted_seed, rm, stats)
-    return {
-        "query_terms": terms,
-        "seed_in": list(pseudo_relevant_doc_ids),
-        "seed_after_anchor": anchored,
-        "seed_weights": weighted_seed,
-        "coherence": _seed_coherence(weighted_seed, stats),
-        "clarity": _model_clarity(rm, stats),
-        "lambda": lam,
-        "top_expansion_terms": sorted(rm.items(), key=lambda kv: -kv[1])[:15],
-        "mu": stats.mu,
-        "avgdl": stats.avgdl,
-    }
+_lib = _load_native()
+if _lib is not None:
+    set_params(**PARAMS)
+else:
+    _py = _load_fallback()

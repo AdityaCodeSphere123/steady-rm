@@ -1,0 +1,872 @@
+#include "rm_engine.h"
+#include "analysis.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <fcntl.h>
+#include <sstream>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <unordered_set>
+
+namespace rm {
+
+// ---------------------------------------------------------------------------
+// Parameters by name
+// ---------------------------------------------------------------------------
+#define RM_PARAMS(X) \
+    X(stemmer) X(doc_stop) X(query_stop) X(qstop_min_len) X(qstop_list) X(smoothing) X(mu) \
+    X(mu_factor) X(mu_min) X(mu_max) X(jm_lambda) X(w_od) X(w_uw) X(uw_window) X(prior_w) \
+    X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
+    X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
+    X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
+    X(fb_sdm) X(fb_prior_w) X(par_min_tokens)
+
+bool set_param(Params& p, const std::string& n, double v) {
+#define X(f) if (n == #f) { p.f = v; return true; }
+    RM_PARAMS(X)
+#undef X
+    return false;
+}
+bool get_param(const Params& p, const std::string& n, double& v) {
+#define X(f) if (n == #f) { v = p.f; return true; }
+    RM_PARAMS(X)
+#undef X
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Tokeniser (same rules as A1's analysis.cpp each_surface): lowercase ASCII
+// alnum runs, dotted initials glued (u.s. -> us), length-1 tokens dropped.
+// Used identically for documents and queries.
+// ---------------------------------------------------------------------------
+static uint8_t T_ALNUM[256], T_LOWER[256];
+static const bool T_INIT = [] {
+    for (int i = 0; i < 256; ++i) {
+        bool a = (i >= '0' && i <= '9') || (i >= 'a' && i <= 'z') || (i >= 'A' && i <= 'Z');
+        T_ALNUM[i] = a;
+        T_LOWER[i] = (i >= 'A' && i <= 'Z') ? static_cast<uint8_t>(i + 32) : static_cast<uint8_t>(i);
+    }
+    return true;
+}();
+
+template <typename Fn>
+static void each_surface(std::string_view text, Fn&& emit) {
+    (void)T_INIT;
+    char tok[256];
+    size_t tn = 0;
+    bool overflow = false;
+    std::string acro;
+    auto flush_acro = [&] { if (acro.size() >= 2) emit(std::string_view(acro)); acro.clear(); };
+    auto take = [&] {
+        if (tn == 0 && !overflow) return;
+        if (tn == 1 && tok[0] >= 'a' && tok[0] <= 'z') acro.push_back(tok[0]);
+        else { flush_acro(); if (tn > 1) emit(std::string_view(tok, tn)); }
+        tn = 0; overflow = false;
+    };
+    for (unsigned char c : text) {
+        if (T_ALNUM[c]) {
+            if (tn < sizeof(tok)) tok[tn++] = static_cast<char>(T_LOWER[c]);
+            else overflow = true;  // absurdly long run: truncated
+        } else {
+            take();
+            if (c != '.') flush_acro();
+        }
+    }
+    take();
+    flush_acro();
+}
+
+static std::unordered_set<std::string> stem_set(const std::unordered_set<std::string>& words, uint8_t st) {
+    std::unordered_set<std::string> out;
+    for (const auto& w : words) { out.insert(w); out.insert(apply_stem(w, st)); }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Scratch (one per worker thread)
+// ---------------------------------------------------------------------------
+struct Engine::Scratch {
+    std::vector<uint32_t> cnt;      // per-term counter, all zero between uses
+    std::vector<uint32_t> touched;
+    std::vector<std::pair<uint32_t, uint16_t>> hits;  // (position, query slot)
+    explicit Scratch(size_t V) : cnt(V, 0) {}
+};
+
+struct Engine::Query {
+    std::vector<std::string> strs;          // analysed terms, in order (in-vocab only)
+    std::vector<uint32_t> terms;            // tids, with duplicates
+    std::vector<uint32_t> uniq, uniq_cnt;   // distinct tids and multiplicity
+    std::vector<uint16_t> slot_of_term;     // terms[i] -> slot in uniq
+    std::vector<std::pair<uint16_t, uint16_t>> pairs;  // adjacent (slot a, slot b)
+    std::vector<std::pair<uint64_t, uint64_t>> pair_cf;  // (cf ordered, cf unordered)
+    size_t len() const { return terms.size(); }
+};
+
+Engine::Engine() {
+    unsigned hw = std::thread::hardware_concurrency();
+    int w = hw == 0 ? 2 : static_cast<int>(hw);
+    if (const char* e = std::getenv("RM_THREADS")) w = std::atoi(e);
+    pool_.reset(new ThreadPool(std::min(w, MAX_THREADS)));
+}
+Engine::~Engine() = default;
+
+// ---------------------------------------------------------------------------
+// prepare(): one parallel pass over the corpus
+// ---------------------------------------------------------------------------
+namespace {
+struct Shard {
+    StrTable surf{1 << 14};                 // surface form -> local term or DROP
+    std::vector<uint32_t> surf_to_local;
+    StrTable local{1 << 14};                // stem -> local term id
+    std::vector<uint64_t> cf;
+    std::vector<uint32_t> df, stamp;
+    std::vector<uint32_t> toks;
+    std::vector<uint64_t> doc_end;          // cumulative token count per doc
+    std::vector<std::string> ids;
+    size_t bad_lines = 0;
+};
+}  // namespace
+
+bool Engine::prepare(const std::string& path_in, std::string& err) {
+    auto t0 = std::chrono::steady_clock::now();
+    std::string path = path_in;
+    struct stat st{};
+    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) path += "/corpus.jsonl";
+    const double sig = P.stemmer * 10 + P.doc_stop;
+    if (ready_ && path == path_ && sig == tok_cfg_sig_) return true;  // idempotent
+
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) { err = "cannot open " + path; return false; }
+    if (fstat(fd, &st) != 0) { close(fd); err = "cannot stat " + path; return false; }
+    size_t size = static_cast<size_t>(st.st_size);
+    const char* data = nullptr;
+    void* map = nullptr;
+    if (size > 0) {
+        map = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (map == MAP_FAILED) { close(fd); err = "mmap failed"; return false; }
+        madvise(map, size, MADV_SEQUENTIAL);
+        data = static_cast<const char*>(map);
+    }
+    close(fd);
+
+    const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
+    const bool doc_stop = P.doc_stop > 0;
+    const int W = pool_->workers();
+    // Split into ~4 chunks per worker at line boundaries (dynamic balance).
+    const size_t n_chunks = size == 0 ? 0 : static_cast<size_t>(W) * 4;
+    std::vector<size_t> cut(n_chunks + 1, 0);
+    for (size_t c = 1; c < n_chunks; ++c) {
+        size_t pos = std::max(cut[c - 1], size * c / n_chunks);
+        const void* nl = pos < size ? memchr(data + pos, '\n', size - pos) : nullptr;
+        cut[c] = nl ? static_cast<size_t>(static_cast<const char*>(nl) - data) + 1 : size;
+    }
+    if (n_chunks) cut[n_chunks] = size;
+    std::vector<Shard> shards(n_chunks);
+
+    pool_->run(n_chunks, [&](size_t c, int) {
+        Shard& sh = shards[c];
+        JsonDoc doc;
+        std::string surf_str;
+        uint32_t docno = 0;
+        const char* p = data + cut[c];
+        const char* end = data + cut[c + 1];
+        while (p < end) {
+            const char* nl = static_cast<const char*>(memchr(p, '\n', end - p));
+            const char* le = nl ? nl : end;
+            const char* ls = p;
+            p = nl ? nl + 1 : end;
+            while (ls < le && (*ls == ' ' || *ls == '\r' || *ls == '\t')) ++ls;
+            if (ls == le) continue;
+            if (!parse_doc_line(ls, le, doc)) { ++sh.bad_lines; continue; }
+            ++docno;
+            each_surface(doc.text, [&](std::string_view s) {
+                uint64_t h = hash_str(s);
+                bool ins = false;
+                uint32_t sid = sh.surf.insert_h(s, h, &ins);
+                if (ins) {
+                    uint32_t lid = StrTable::NONE;
+                    surf_str.assign(s);
+                    if (!(doc_stop && INDEX_STOPWORDS.count(surf_str))) {
+                        const std::string& stem = apply_stem(surf_str, stemmer);
+                        bool ins2 = false;
+                        lid = sh.local.insert(stem, &ins2);
+                        if (ins2) { sh.cf.push_back(0); sh.df.push_back(0); sh.stamp.push_back(0); }
+                    }
+                    sh.surf_to_local.push_back(lid);
+                }
+                uint32_t lid = sh.surf_to_local[sid];
+                if (lid == StrTable::NONE) return;
+                sh.toks.push_back(lid);
+                ++sh.cf[lid];
+                if (sh.stamp[lid] != docno) { sh.stamp[lid] = docno; ++sh.df[lid]; }
+            });
+            sh.doc_end.push_back(sh.toks.size());
+            sh.ids.emplace_back(doc.id);
+        }
+    });
+    if (map) munmap(map, size);
+
+    // Merge local vocabularies into the global one (deterministic order).
+    vocab_ = StrTable(1 << 16);
+    cf_.clear(); df_.clear();
+    std::vector<std::vector<uint32_t>> remap(n_chunks);
+    size_t N = 0, T = 0;
+    for (size_t c = 0; c < n_chunks; ++c) {
+        Shard& sh = shards[c];
+        remap[c].resize(sh.local.size());
+        for (uint32_t l = 0; l < sh.local.size(); ++l) {
+            bool ins = false;
+            uint32_t g = vocab_.insert_h(sh.local.key(l), sh.local.hash_of(l), &ins);
+            if (ins) { cf_.push_back(0); df_.push_back(0); }
+            cf_[g] += sh.cf[l];
+            df_[g] += sh.df[l];
+            remap[c][l] = g;
+        }
+        N += sh.ids.size();
+        T += sh.toks.size();
+    }
+    std::vector<size_t> doc_base(n_chunks + 1, 0), tok_base(n_chunks + 1, 0);
+    for (size_t c = 0; c < n_chunks; ++c) {
+        doc_base[c + 1] = doc_base[c] + shards[c].ids.size();
+        tok_base[c + 1] = tok_base[c] + shards[c].toks.size();
+    }
+    toks_.assign(T, 0);
+    tok_off_.assign(N + 1, 0);
+    pool_->run(n_chunks, [&](size_t c, int) {
+        Shard& sh = shards[c];
+        const auto& rmp = remap[c];
+        uint32_t* out = toks_.data() + tok_base[c];
+        for (size_t i = 0; i < sh.toks.size(); ++i) out[i] = rmp[sh.toks[i]];
+        for (size_t d = 0; d < sh.doc_end.size(); ++d) tok_off_[doc_base[c] + d + 1] = tok_base[c] + sh.doc_end[d];
+        std::vector<uint32_t>().swap(sh.toks);
+    });
+    docids_ = StrTable(N + 16);
+    docid_to_doc_.clear();
+    doc_key_.assign(N, 0);
+    size_t bad = 0;
+    for (size_t c = 0; c < n_chunks; ++c) {
+        bad += shards[c].bad_lines;
+        for (size_t d = 0; d < shards[c].ids.size(); ++d) {
+            bool ins = false;
+            uint32_t key = docids_.insert(shards[c].ids[d], &ins);
+            doc_key_[doc_base[c] + d] = key;
+            if (ins) docid_to_doc_.push_back(static_cast<int32_t>(doc_base[c] + d));  // first wins
+        }
+    }
+    shards.clear();
+    total_ = T;
+    avgdl_ = N ? static_cast<double>(T) / N : 0.0;
+
+    // Term flags for query / expansion-term stopping, on stemmed forms.
+    auto long_s = stem_set(STOPWORDS, stemmer), short_s = stem_set(INDEX_STOPWORDS, stemmer);
+    term_flags_.assign(vocab_.size(), 0);
+    std::string tmp;
+    for (uint32_t t = 0; t < vocab_.size(); ++t) {
+        tmp.assign(vocab_.key(t));
+        if (long_s.count(tmp)) term_flags_[t] |= 1;
+        if (short_s.count(tmp)) term_flags_[t] |= 2;
+    }
+
+    scratch_.clear();
+    for (int w = 0; w < pool_->workers(); ++w) scratch_.emplace_back(new Scratch(vocab_.size()));
+    pair_cf_.clear();
+    path_ = path;
+    tok_cfg_sig_ = sig;
+    ready_ = true;
+    prepare_seconds_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    if (N == 0 && bad) { err = "no parseable documents"; }
+    return true;
+}
+
+std::string Engine::stats_json() const {
+    std::ostringstream o;
+    o << "{\"docs\":" << n_docs() << ",\"vocab\":" << vocab_.size() << ",\"tokens\":" << total_
+      << ",\"avgdl\":" << avgdl_ << ",\"mu\":" << mu_eff() << ",\"threads\":" << pool_->workers()
+      << ",\"prepare_seconds\":" << prepare_seconds_ << "}";
+    return o.str();
+}
+
+double Engine::mu_eff() const {
+    if (P.mu > 0) return P.mu;
+    double m = P.mu_factor * avgdl_;
+    if (!(m > 0)) return 1000.0;
+    return std::min(P.mu_max, std::max(P.mu_min, m));
+}
+
+int32_t Engine::doc_index(std::string_view id) const {
+    uint32_t i = docids_.find(id);
+    return i == StrTable::NONE ? -1 : docid_to_doc_[i];
+}
+
+// ---------------------------------------------------------------------------
+// Query analysis
+// ---------------------------------------------------------------------------
+Engine::Query Engine::parse_query(std::string_view qtext) {
+    const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
+    std::vector<std::string> surf;
+    each_surface(qtext, [&](std::string_view s) { surf.emplace_back(s); });
+    const auto& stops = P.qstop_list > 0 ? STOPWORDS : INDEX_STOPWORDS;
+    bool drop = P.query_stop >= 2 || (P.query_stop >= 1 && surf.size() >= P.qstop_min_len);
+    std::vector<std::string> kept;
+    if (drop) for (auto& s : surf) if (!stops.count(s)) kept.push_back(s);
+    if (kept.empty()) kept = surf;   // all-stopword query: keep everything
+    if (P.doc_stop > 0) {
+        std::vector<std::string> k2;
+        for (auto& s : kept) if (!INDEX_STOPWORDS.count(s)) k2.push_back(s);
+        kept.swap(k2);
+    }
+    Query q;
+    int prev = -1;  // slot of previous in-vocab term; OOV breaks adjacency
+    for (auto& s : kept) {
+        const std::string& stem = apply_stem(s, stemmer);
+        uint32_t t = vocab_.find(stem);
+        if (t == StrTable::NONE) { prev = -1; continue; }  // OOV: constant for every doc
+        auto it = std::find(q.uniq.begin(), q.uniq.end(), t);
+        uint16_t slot;
+        if (it == q.uniq.end()) { slot = static_cast<uint16_t>(q.uniq.size()); q.uniq.push_back(t); q.uniq_cnt.push_back(0); }
+        else slot = static_cast<uint16_t>(it - q.uniq.begin());
+        ++q.uniq_cnt[slot];
+        q.terms.push_back(t);
+        q.slot_of_term.push_back(slot);
+        q.strs.push_back(stem);
+        if (prev >= 0) q.pairs.push_back({static_cast<uint16_t>(prev), slot});
+        prev = slot;
+        if (q.uniq.size() >= 0xFFF0) break;
+    }
+    q.pair_cf.assign(q.pairs.size(), {0, 0});
+    return q;
+}
+
+std::vector<std::string> Engine::analyze_query(std::string_view query) { return parse_query(query).strs; }
+
+// ---------------------------------------------------------------------------
+// Proximity counting. hits are (position, slot), sorted by position.
+//   ordered   #1(a b): a at i and b at i+1
+//   unordered #uwW(a b): an a-occurrence with a b within distance < W
+// The same function counts documents and (summed) the whole collection, so
+// document and background statistics are defined identically.
+// ---------------------------------------------------------------------------
+static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
+                        const std::vector<std::pair<uint16_t, uint16_t>>& pairs, uint32_t W,
+                        uint64_t* od, uint64_t* uw) {
+    const size_t H = hits.size();
+    for (size_t p = 0; p < pairs.size(); ++p) {
+        const uint16_t a = pairs[p].first, b = pairs[p].second;
+        for (size_t i = 0; i < H; ++i) {
+            if (hits[i].second != a) continue;
+            const uint32_t pos = hits[i].first;
+            if (i + 1 < H && hits[i + 1].first == pos + 1 && hits[i + 1].second == b) ++od[p];
+            bool found = false;
+            for (size_t j = i + 1; j < H && hits[j].first < pos + W; ++j)
+                if (hits[j].second == b && hits[j].first != pos) { found = true; break; }
+            for (size_t j = i; !found && j-- > 0 && hits[j].first + W > pos;)
+                if (hits[j].second == b && hits[j].first != pos) found = true;
+            if (found) ++uw[p];
+        }
+    }
+}
+
+void Engine::ensure_pair_stats(Query& q) {
+    if (q.pairs.empty() || (P.w_od <= 0 && P.w_uw <= 0)) return;
+    const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
+    std::lock_guard<std::mutex> g(pair_m_);
+    if (pair_window_ != W) { pair_cf_.clear(); pair_window_ = W; }
+    std::vector<size_t> missing;
+    for (size_t p = 0; p < q.pairs.size(); ++p) {
+        uint64_t key = (static_cast<uint64_t>(q.uniq[q.pairs[p].first]) << 32) | q.uniq[q.pairs[p].second];
+        auto it = pair_cf_.find(key);
+        if (it != pair_cf_.end()) q.pair_cf[p] = it->second;
+        else missing.push_back(p);
+    }
+    if (missing.empty()) return;
+    std::vector<std::pair<uint16_t, uint16_t>> mp;
+    for (size_t p : missing) mp.push_back(q.pairs[p]);
+    // Dense slot marker over the vocabulary, shared read-only by the workers.
+    std::vector<uint16_t> mark(vocab_.size(), 0xFFFF);
+    for (auto& pr : mp) { mark[q.uniq[pr.first]] = pr.first; mark[q.uniq[pr.second]] = pr.second; }
+    const size_t N = n_docs(), chunks = std::min<size_t>(256, std::max<size_t>(1, N / 512));
+    std::mutex acc_m;
+    std::vector<uint64_t> od(mp.size(), 0), uw(mp.size(), 0);
+    pool_->run(chunks, [&](size_t c, int) {
+        std::vector<uint64_t> lod(mp.size(), 0), luw(mp.size(), 0);
+        std::vector<std::pair<uint32_t, uint16_t>> hits;
+        size_t d0 = N * c / chunks, d1 = N * (c + 1) / chunks;
+        for (size_t d = d0; d < d1; ++d) {
+            hits.clear();
+            const uint32_t* t = toks_.data() + tok_off_[d];
+            uint32_t n = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+            for (uint32_t i = 0; i < n; ++i) { uint16_t s = mark[t[i]]; if (s != 0xFFFF) hits.push_back({i, s}); }
+            if (hits.size() >= 2) count_pairs(hits, mp, W, lod.data(), luw.data());
+        }
+        std::lock_guard<std::mutex> lg(acc_m);
+        for (size_t i = 0; i < mp.size(); ++i) { od[i] += lod[i]; uw[i] += luw[i]; }
+    });
+    for (size_t i = 0; i < missing.size(); ++i) {
+        size_t p = missing[i];
+        q.pair_cf[p] = {od[i], uw[i]};
+        uint64_t key = (static_cast<uint64_t>(q.uniq[q.pairs[p].first]) << 32) | q.uniq[q.pairs[p].second];
+        pair_cf_[key] = q.pair_cf[p];
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Smoothed document language model
+// ---------------------------------------------------------------------------
+double Engine::log_p(uint32_t tf, uint32_t dlen, double pc) const {
+    if (P.smoothing >= 1) {
+        const double l = P.jm_lambda;
+        double ml = dlen ? static_cast<double>(tf) / dlen : 0.0;
+        return std::log((1 - l) * ml + l * pc);
+    }
+    const double mu = mu_eff();
+    return std::log((tf + mu * pc) / (dlen + mu));
+}
+
+Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) const {
+    DocFeat f;
+    const size_t U = q.uniq.size();
+    uint32_t tfq[64];
+    std::vector<uint32_t> tfq_big;
+    uint32_t* tf = tfq;
+    if (U > 64) { tfq_big.assign(U, 0); tf = tfq_big.data(); } else std::fill(tfq, tfq + U, 0u);
+    uint32_t dlen = 0;
+    s.hits.clear();
+    if (d >= 0) {
+        const uint32_t* t = toks_.data() + tok_off_[d];
+        dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+        for (uint32_t i = 0; i < dlen; ++i) {
+            const uint32_t term = t[i];
+            for (size_t u = 0; u < U; ++u)
+                if (q.uniq[u] == term) { ++tf[u]; s.hits.push_back({i, static_cast<uint16_t>(u)}); break; }
+        }
+    }
+    const double T = static_cast<double>(total_);
+    for (size_t u = 0; u < U; ++u) {
+        f.uni += q.uniq_cnt[u] * log_p(tf[u], dlen, cf_[q.uniq[u]] / T);
+        if (tf[u]) f.matched += q.uniq_cnt[u];
+    }
+    if (!q.pairs.empty() && (P.w_od > 0 || P.w_uw > 0)) {
+        const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
+        std::vector<uint64_t> od(q.pairs.size(), 0), uw(q.pairs.size(), 0);
+        if (s.hits.size() >= 2) count_pairs(s.hits, q.pairs, W, od.data(), uw.data());
+        for (size_t p = 0; p < q.pairs.size(); ++p) {
+            double pco = (q.pair_cf[p].first ? q.pair_cf[p].first : 0.5) / T;
+            double pcu = (q.pair_cf[p].second ? q.pair_cf[p].second : 0.5) / T;
+            f.od += log_p(static_cast<uint32_t>(od[p]), dlen, pco);
+            f.uw += log_p(static_cast<uint32_t>(uw[p]), dlen, pcu);
+        }
+    }
+    return f;
+}
+
+// Query part of the score. With sdm=false this is sum_q log P(q|D).
+double Engine::qpart(const Query&, const DocFeat& f, bool sdm) const {
+    return sdm ? f.uni + P.w_od * f.od + P.w_uw * f.uw : f.uni;
+}
+
+// Scores every doc in `docs`:
+//   model == nullptr:  qpart (SDM)                           [Track A]
+//   otherwise:         lam * qpart/|Q| + (1-lam) * sum_w M(w) log P(w|D)
+// The RM sum is split into a document-independent background term plus a
+// correction over the model terms the document actually contains, so a
+// document costs O(|D|) however many expansion terms there are.
+std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t>& docs,
+                                       const std::vector<std::pair<uint32_t, double>>* model,
+                                       double lam, bool sdm) {
+    const size_t n = docs.size();
+    std::vector<double> out(n, 0.0);
+    const double T = static_cast<double>(total_), mu = mu_eff();
+    const bool jm = P.smoothing >= 1;
+    std::vector<double>& mw = mw_;       // dense model weights, all zero between calls
+    double msum = 0, base_const = 0;
+    if (model) {
+        if (mw.size() != vocab_.size()) mw.assign(vocab_.size(), 0.0);
+        for (auto& [t, w] : *model) {
+            mw[t] = w;
+            msum += w;
+            double pc = cf_[t] / T;
+            base_const += w * (jm ? std::log(P.jm_lambda * pc) : std::log(mu * pc));
+        }
+    }
+    const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
+    auto one = [&](size_t i, Scratch& s) {
+        const int32_t d = docs[i];
+        DocFeat f = doc_features(q, d, s);
+        double qs = qpart(q, f, sdm);
+        if (!model) { out[i] = qs; return; }
+        double rmp = base_const;
+        uint32_t dlen = 0;
+        if (d >= 0) {
+            const uint32_t* t = toks_.data() + tok_off_[d];
+            dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+            s.touched.clear();
+            for (uint32_t k = 0; k < dlen; ++k) { uint32_t w = t[k]; if (mw[w] > 0) { if (s.cnt[w]++ == 0) s.touched.push_back(w); } }
+            for (uint32_t w : s.touched) {
+                double pc = cf_[w] / T;
+                rmp += mw[w] * (log_p(s.cnt[w], dlen, pc) - log_p(0, dlen, pc));
+                s.cnt[w] = 0;
+            }
+        }
+        if (!jm) rmp -= msum * std::log(dlen + mu);
+        out[i] = lam * qs / qn + (1 - lam) * rmp;
+    };
+    uint64_t work = 0;
+    for (int32_t d : docs) if (d >= 0) work += tok_off_[d + 1] - tok_off_[d];
+    if (work >= P.par_min_tokens && pool_->workers() > 1 && n > 8) {
+        const size_t chunks = std::min<size_t>(n, pool_->workers() * 4);
+        pool_->run(chunks, [&](size_t c, int w) {
+            for (size_t i = n * c / chunks; i < n * (c + 1) / chunks; ++i) one(i, *scratch_[w]);
+        });
+    } else {
+        for (size_t i = 0; i < n; ++i) one(i, *scratch_[0]);
+    }
+    if (model) for (auto& x : *model) mw[x.first] = 0.0;
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Ranking helpers
+// ---------------------------------------------------------------------------
+static void zscore(std::vector<double>& v) {
+    if (v.empty()) return;
+    double m = 0; for (double x : v) m += x; m /= v.size();
+    double var = 0; for (double x : v) var += (x - m) * (x - m); var /= v.size();
+    double sd = std::sqrt(var);
+    for (double& x : v) x = sd < 1e-12 ? 0.0 : (x - m) / sd;
+}
+
+std::vector<Ranked> Engine::fuse_rank(std::vector<double>& score, const std::vector<std::string_view>& ids,
+                                      double prior_w, int k) const {
+    const size_t n = score.size();
+    std::vector<double> fused = score;
+    if (prior_w > 0 && n > 1) {
+        zscore(fused);
+        std::vector<double> pr(n);
+        for (size_t i = 0; i < n; ++i) pr[i] = 1.0 / (P.prior_k + i);
+        zscore(pr);
+        for (size_t i = 0; i < n; ++i) fused[i] += prior_w * pr[i];
+    }
+    std::vector<int32_t> order(n);
+    for (size_t i = 0; i < n; ++i) order[i] = static_cast<int32_t>(i);
+    auto cmp = [&](int32_t a, int32_t b) {
+        if (fused[a] != fused[b]) return fused[a] > fused[b];
+        return ids[a] < ids[b];   // deterministic doc_id tie-break
+    };
+    size_t kk = std::min<size_t>(n, k < 0 ? 0 : static_cast<size_t>(k));
+    std::partial_sort(order.begin(), order.begin() + kk, order.end(), cmp);
+    std::vector<Ranked> out;
+    for (size_t i = 0; i < kk; ++i) out.push_back({order[i], fused[order[i]]});
+    return out;
+}
+
+std::vector<Ranked> Engine::pool_order(const std::vector<std::string_view>& ids, int k) const {
+    std::vector<Ranked> out;
+    for (size_t i = 0; i < ids.size() && static_cast<int>(i) < k; ++i) out.push_back({static_cast<int32_t>(i), -static_cast<double>(i)});
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Track A
+// ---------------------------------------------------------------------------
+std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::vector<std::string_view>& cands, int k) {
+    if (cands.empty() || k <= 0) return {};
+    Query q = parse_query(query);
+    if (q.terms.empty()) return pool_order(cands, k);
+    ensure_pair_stats(q);
+    std::vector<int32_t> docs(cands.size());
+    for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
+    std::vector<double> s = score_pool(q, docs, nullptr, 1.0, true);
+    return fuse_rank(s, cands, P.prior_w, k);
+}
+
+// ---------------------------------------------------------------------------
+// Relevance model
+// ---------------------------------------------------------------------------
+std::vector<std::pair<uint32_t, uint32_t>> Engine::bag(int32_t d, Scratch& s) const {
+    std::vector<std::pair<uint32_t, uint32_t>> b;
+    if (d < 0) return b;
+    const uint32_t* t = toks_.data() + tok_off_[d];
+    uint32_t n = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+    s.touched.clear();
+    for (uint32_t i = 0; i < n; ++i) if (s.cnt[t[i]]++ == 0) s.touched.push_back(t[i]);
+    for (uint32_t w : s.touched) { b.push_back({w, s.cnt[w]}); s.cnt[w] = 0; }
+    std::sort(b.begin(), b.end());
+    return b;
+}
+
+bool Engine::expansion_ok(uint32_t t) const {
+    return !(term_flags_[t] & 1) && cf_[t] >= P.min_cf;
+}
+
+// P(D|Q) over the seed: softmax(beta * mean_q log P(q|D)); beta < 0 gives
+// the exact RM1 weight P(Q|D) = exp(sum_q log P(q|D)).
+std::vector<Engine::Seed> Engine::seed_weights(const Query& q, const std::vector<std::string_view>& seeds, Scratch& s) {
+    std::vector<Seed> out;
+    std::unordered_set<int32_t> seen;
+    std::vector<int32_t> ds;
+    for (auto id : seeds) { int32_t d = doc_index(id); if (d >= 0 && seen.insert(d).second) ds.push_back(d); }
+    if (ds.empty()) return out;
+    const double qn = static_cast<double>(q.len());
+    std::vector<double> m(ds.size());
+    std::vector<bool> anch(ds.size());
+    size_t n_anch = 0;
+    for (size_t i = 0; i < ds.size(); ++i) {
+        DocFeat f = doc_features(q, ds[i], s);
+        m[i] = qpart(q, f, P.seed_sdm > 0) / qn;
+        anch[i] = f.matched > 0;
+        n_anch += anch[i];
+    }
+    bool use_anchor = P.anchor_min > 0 && n_anch >= P.anchor_min;
+    const double beta = P.beta < 0 ? qn : P.beta;
+    double best = -1e300;
+    for (size_t i = 0; i < ds.size(); ++i) if (!use_anchor || anch[i]) best = std::max(best, m[i]);
+    for (size_t i = 0; i < ds.size(); ++i) {
+        if (use_anchor && !anch[i]) continue;
+        out.push_back({ds[i], std::exp(beta * (m[i] - best))});
+    }
+    if (P.trim_floor > 0) {
+        std::vector<Seed> kept;
+        for (auto& x : out) if (x.w >= P.trim_floor) kept.push_back(x);   // max weight is 1
+        if (!kept.empty()) out.swap(kept);
+    }
+    std::stable_sort(out.begin(), out.end(), [](const Seed& a, const Seed& b) {
+        return a.w != b.w ? a.w > b.w : a.d < b.d;
+    });
+    if (out.size() > static_cast<size_t>(std::max(1.0, P.fb_docs))) out.resize(static_cast<size_t>(std::max(1.0, P.fb_docs)));
+    double z = 0; for (auto& x : out) z += x.w;
+    for (auto& x : out) x.w = z > 0 ? x.w / z : 1.0 / out.size();
+    return out;
+}
+
+std::vector<std::pair<uint32_t, double>> Engine::finish_model(std::vector<std::pair<uint32_t, double>>& m) const {
+    if (P.idf_power != 0) {
+        const double N = n_docs();
+        for (auto& [t, w] : m) w *= std::pow(std::log((N + 1) / (df_[t] + 0.5)), P.idf_power);
+    }
+    std::sort(m.begin(), m.end(), [](const auto& a, const auto& b) { return a.second != b.second ? a.second > b.second : a.first < b.first; });
+    size_t keep = static_cast<size_t>(std::max(1.0, P.fb_terms));
+    if (m.size() > keep) m.resize(keep);
+    double z = 0; for (auto& x : m) z += x.second;
+    if (z <= 0) return {};
+    for (auto& x : m) x.second /= z;
+    return m;
+}
+
+// RM1: P(w|R) = sum_D P(w|D) P(D|Q)
+std::vector<std::pair<uint32_t, double>> Engine::est_rm1(const std::vector<Seed>& seed, Scratch& s) {
+    std::unordered_map<uint32_t, std::pair<double, int>> acc;
+    const double T = static_cast<double>(total_), fm = P.fb_mu;
+    for (auto& sd : seed) {
+        auto b = bag(sd.d, s);
+        double dlen = static_cast<double>(tok_off_[sd.d + 1] - tok_off_[sd.d]);
+        if (dlen + fm <= 0) continue;
+        for (auto& [t, tf] : b) {
+            double p = (tf + fm * cf_[t] / T) / (dlen + fm);
+            if (p > P.per_doc_cap) p = P.per_doc_cap;
+            auto& a = acc[t];
+            a.first += sd.w * p;
+            a.second += 1;
+        }
+    }
+    int need = seed.size() >= 3 ? static_cast<int>(P.term_support) : 1;
+    std::vector<std::pair<uint32_t, double>> m;
+    for (auto& [t, a] : acc) if (a.second >= need && expansion_ok(t)) m.push_back({t, a.first});
+    if (m.empty()) for (auto& [t, a] : acc) if (!(term_flags_[t] & 1)) m.push_back({t, a.first});
+    return finish_model(m);
+}
+
+// RM2 (Lavrenko & Croft 2001, conditional / i.i.d. sampling):
+//   P(w|R) ∝ P(w) prod_i sum_D P(q_i|D) P(D|w),  P(D|w) = P(w|D)P(D)/P(w)
+// A term only scores well if it co-occurs with EVERY query term somewhere
+// in the seed, which is what makes RM2 resistant to off-topic seed docs.
+std::vector<std::pair<uint32_t, double>> Engine::est_rm2(const Query& q, const std::vector<Seed>& seed, Scratch& s) {
+    const size_t S = seed.size(), Q = q.len();
+    if (!S || !Q) return {};
+    const double T = static_cast<double>(total_), fm = P.fb_mu;
+    std::vector<double> PD(S), dl(S);
+    std::vector<std::vector<double>> pq(S, std::vector<double>(Q));
+    std::unordered_map<uint32_t, uint32_t> uidx;
+    std::vector<uint32_t> terms;
+    std::vector<int> support;
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> bags(S);
+    for (size_t j = 0; j < S; ++j) {
+        PD[j] = P.rm2_uniform_prior > 0 ? 1.0 / S : seed[j].w;
+        dl[j] = static_cast<double>(tok_off_[seed[j].d + 1] - tok_off_[seed[j].d]);
+        bags[j] = bag(seed[j].d, s);
+        for (auto& [t, tf] : bags[j]) {
+            auto it = uidx.emplace(t, static_cast<uint32_t>(terms.size()));
+            if (it.second) { terms.push_back(t); support.push_back(0); }
+            ++support[it.first->second];
+        }
+        for (size_t i = 0; i < Q; ++i) {
+            uint32_t tf = 0;
+            auto it = std::lower_bound(bags[j].begin(), bags[j].end(), std::make_pair(q.terms[i], 0u));
+            if (it != bags[j].end() && it->first == q.terms[i]) tf = it->second;
+            pq[j][i] = std::exp(log_p(tf, static_cast<uint32_t>(dl[j]), cf_[q.terms[i]] / T));
+        }
+    }
+    const size_t U = terms.size();
+    std::vector<float> tfm(U * S, 0.0f);
+    for (size_t j = 0; j < S; ++j) for (auto& [t, tf] : bags[j]) tfm[uidx[t] * S + j] = static_cast<float>(tf);
+    int need = S >= 3 ? static_cast<int>(P.term_support) : 1;
+    std::vector<std::pair<uint32_t, double>> logv;
+    std::vector<double> pwd(S);
+    for (size_t u = 0; u < U; ++u) {
+        uint32_t t = terms[u];
+        if (support[u] < need || !expansion_ok(t)) continue;
+        double pc = cf_[t] / T, Pw = 0;
+        for (size_t j = 0; j < S; ++j) {
+            pwd[j] = dl[j] + fm > 0 ? (tfm[u * S + j] + fm * pc) / (dl[j] + fm) : 0.0;
+            Pw += pwd[j] * PD[j];
+        }
+        if (Pw <= 0) continue;
+        double lv = std::log(Pw);
+        bool ok = true;
+        for (size_t i = 0; i < Q && ok; ++i) {
+            double inner = 0;
+            for (size_t j = 0; j < S; ++j) inner += pq[j][i] * pwd[j] * PD[j];
+            if (inner <= 0) ok = false; else lv += std::log(inner / Pw);
+        }
+        if (ok) logv.push_back({t, lv});
+    }
+    if (logv.empty()) return {};
+    double mx = -1e300; for (auto& x : logv) mx = std::max(mx, x.second);
+    for (auto& x : logv) x.second = std::exp(x.second - mx);
+    return finish_model(logv);
+}
+
+std::vector<std::pair<uint32_t, double>> Engine::estimate(const Query& q, std::vector<Seed>& seed, int variant, Scratch& s) {
+    auto run = [&]() -> std::vector<std::pair<uint32_t, double>> {
+        double mix = variant == 1 ? 0.0 : variant == 2 ? 1.0 : P.rm2_mix;
+        if (mix <= 0) return est_rm1(seed, s);
+        if (mix >= 1) return est_rm2(q, seed, s);
+        auto a = est_rm1(seed, s), b = est_rm2(q, seed, s);
+        std::unordered_map<uint32_t, double> m;
+        for (auto& [t, w] : a) m[t] += (1 - mix) * w;
+        for (auto& [t, w] : b) m[t] += mix * w;
+        std::vector<std::pair<uint32_t, double>> v(m.begin(), m.end());
+        double save = P.idf_power; P.idf_power = 0;          // already applied
+        auto r = finish_model(v);
+        P.idf_power = save;
+        return r;
+    };
+    auto model = run();
+    if (P.agree_gamma > 0 && seed.size() >= 3 && !model.empty()) {
+        // Down-weight seed docs whose term distribution disagrees with the
+        // consensus model (cosine over the model's terms), then re-estimate.
+        std::unordered_map<uint32_t, double> mm(model.begin(), model.end());
+        double mn = 0; for (auto& x : model) mn += x.second * x.second;
+        mn = std::sqrt(mn);
+        double z = 0;
+        for (auto& sd : seed) {
+            auto b = bag(sd.d, s);
+            double dot = 0, dn = 0;
+            for (auto& [t, tf] : b) { dn += double(tf) * tf; auto it = mm.find(t); if (it != mm.end()) dot += tf * it->second; }
+            double cs = (dn > 0 && mn > 0) ? dot / (std::sqrt(dn) * mn) : 0.0;
+            sd.w *= std::pow(std::max(cs, 1e-3), P.agree_gamma);
+            z += sd.w;
+        }
+        for (auto& sd : seed) sd.w = z > 0 ? sd.w / z : 1.0 / seed.size();
+        model = run();
+    }
+    return model;
+}
+
+// Mean pairwise cosine of (1+log tf)*idf vectors of the seed docs.
+double Engine::coherence(const std::vector<Seed>& seed, Scratch& s) const {
+    if (seed.size() < 2) return 0.5;
+    const double N = n_docs();
+    std::vector<std::vector<std::pair<uint32_t, double>>> v(seed.size());
+    std::vector<double> norm(seed.size(), 0);
+    for (size_t i = 0; i < seed.size(); ++i) {
+        for (auto& [t, tf] : bag(seed[i].d, s)) {
+            if (term_flags_[t] & 1) continue;
+            double w = (1 + std::log(double(tf))) * std::log(1 + N / df_[t]);
+            v[i].push_back({t, w});
+            norm[i] += w * w;
+        }
+        norm[i] = std::sqrt(norm[i]);
+    }
+    double sum = 0; int pairs = 0;
+    for (size_t i = 0; i < v.size(); ++i) for (size_t j = i + 1; j < v.size(); ++j) {
+        if (norm[i] <= 0 || norm[j] <= 0) continue;
+        double dot = 0; size_t a = 0, b = 0;
+        while (a < v[i].size() && b < v[j].size()) {
+            if (v[i][a].first < v[j][b].first) ++a;
+            else if (v[i][a].first > v[j][b].first) ++b;
+            else { dot += v[i][a].second * v[j][b].second; ++a; ++b; }
+        }
+        sum += dot / (norm[i] * norm[j]); ++pairs;
+    }
+    return pairs ? std::min(1.0, std::max(0.0, sum / pairs)) : 0.5;
+}
+
+// Clarity: KL(P(.|R) || P(.|C)), scaled to [0,1].
+double Engine::clarity(const std::vector<std::pair<uint32_t, double>>& m) const {
+    double kl = 0;
+    for (auto& [t, p] : m) { double pc = double(cf_[t]) / total_; if (p > 0 && pc > 0) kl += p * std::log(p / pc); }
+    return std::min(1.0, std::max(0.0, kl / P.clarity_scale));
+}
+
+std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_view query,
+                                                                    const std::vector<std::string_view>& seeds,
+                                                                    int variant, Explain* ex) {
+    std::vector<std::pair<std::string, double>> out;
+    Query q = parse_query(query);
+    if (q.terms.empty()) return out;
+    ensure_pair_stats(q);
+    Scratch& s = *scratch_[0];
+    auto seed = seed_weights(q, seeds, s);
+    if (seed.empty()) return out;
+    auto m = estimate(q, seed, variant, s);
+    for (auto& [t, w] : m) out.push_back({std::string(vocab_.key(t)), w});
+    if (ex) {
+        ex->qterms = q.strs;
+        for (auto& sd : seed) ex->seed_weights.push_back({std::string(docids_.key(doc_key_[sd.d])), sd.w});
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Tracks B/C
+// ---------------------------------------------------------------------------
+std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
+                                     const std::vector<std::string_view>& cands, int k, Explain* ex) {
+    if (cands.empty() || k <= 0) return {};
+    Query q = parse_query(query);
+    if (q.terms.empty()) return pool_order(cands, k);
+    ensure_pair_stats(q);
+    Scratch& s = *scratch_[0];
+    const int variant = static_cast<int>(P.rm_variant);
+    auto seed = seed_weights(q, seeds, s);
+    if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback: exactly QL
+    auto model = estimate(q, seed, variant, s);
+    if (model.empty()) return score_candidates(query, cands, k);
+
+    double lam, coh = 0, clar = 0;
+    if (variant != 3) lam = 0.0;                        // pure RM1 / RM2 ranking
+    else if (P.lambda >= 0) lam = std::min(1.0, P.lambda);
+    else {
+        coh = coherence(seed, s);
+        clar = clarity(model);
+        double quality = std::min(1.0, std::max(0.0, P.coh_w * coh + (1 - P.coh_w) * clar));
+        lam = P.lambda_max - (P.lambda_max - P.lambda_min) * quality;
+    }
+    if (ex) {
+        ex->qterms = q.strs;
+        for (auto& sd : seed) ex->seed_weights.push_back({std::string(docids_.key(doc_key_[sd.d])), sd.w});
+        for (auto& [t, w] : model) ex->rm.push_back({std::string(vocab_.key(t)), w});
+        ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
+    }
+    std::vector<int32_t> docs(cands.size());
+    for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
+    std::vector<double> sc = score_pool(q, docs, &model, lam, variant == 3 && P.fb_sdm > 0);
+    double pw = variant != 3 ? 0.0 : (P.fb_prior_w >= 0 ? P.fb_prior_w : P.prior_w);
+    return fuse_rank(sc, cands, pw, k);
+}
+
+}  // namespace rm

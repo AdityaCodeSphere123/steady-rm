@@ -2,6 +2,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 runs/
-data/full/
 .DS_Store
 *.egg-info/
+.venv/
+submission/_build/
+*.so
+data/*
+!data/README.md
+!data/toy/

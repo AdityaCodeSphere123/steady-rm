@@ -108,8 +108,11 @@ def write_candidates(path, queries, bm25, degrade: float, seed: int) -> None:
     """
     rng = random.Random(seed)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    n = len(queries)
     with open(path, "w", encoding="utf-8") as fh:
-        for qid, text in queries:
+        for i, (qid, text) in enumerate(queries, 1):
+            if i == 1 or i % 100 == 0 or i == n:
+                print(f"  scoring candidates {i}/{n}", flush=True)
             ranked = bm25.search(text, TOP_K)
             if degrade > 0 and ranked:
                 keep = max(1, int(round(len(ranked) * (1.0 - degrade))))
@@ -138,32 +141,51 @@ def load_local(path: str):
     return docs, queries, qrels_lines
 
 
-def fetch_ir_datasets(dataset: str, out: str):
+def _eval_split(dataset: str):
+    """BEIR parent IDs often have docs+queries but no qrels; judgments live on /test."""
     import ir_datasets
 
-    ds = ir_datasets.load(dataset)
+    parent = ir_datasets.load(dataset)
+    if hasattr(parent, "qrels_iter"):
+        return parent, parent
+    for suffix in ("/test", "/dev", "/val", "/train"):
+        try:
+            split = ir_datasets.load(dataset + suffix)
+        except Exception:
+            continue
+        if hasattr(split, "qrels_iter") and hasattr(split, "queries_iter"):
+            docs_ds = parent if hasattr(parent, "docs_iter") else split
+            print(f"{dataset} has no qrels; using {dataset}{suffix} for queries/qrels")
+            return docs_ds, split
+    raise SystemExit(f"{dataset} has no qrels on the parent or a test/dev/train split")
+
+
+def fetch_ir_datasets(dataset: str, out: str):
+    docs_ds, eval_ds = _eval_split(dataset)
     os.makedirs(out, exist_ok=True)
 
     docs = []
     with open(os.path.join(out, "corpus.jsonl"), "w", encoding="utf-8") as fh:
-        for doc in ds.docs_iter():
+        for doc in docs_ds.docs_iter():
             text = doc.default_text() if hasattr(doc, "default_text") else getattr(doc, "text", "")
             fh.write(json.dumps({"doc_id": doc.doc_id, "text": text}) + "\n")
             docs.append((doc.doc_id, text))
 
     queries = []
     with open(os.path.join(out, "queries_dev.tsv"), "w", encoding="utf-8") as fh:
-        for q in ds.queries_iter():
+        for q in eval_ds.queries_iter():
             text = q.default_text() if hasattr(q, "default_text") else getattr(q, "text", "")
             text = " ".join(text.split())
             fh.write(f"{q.query_id}\t{text}\n")
             queries.append((q.query_id, text))
 
+    n_qrels = 0
     with open(os.path.join(out, "qrels_dev.txt"), "w", encoding="utf-8") as fh:
-        for qrel in ds.qrels_iter():
+        for qrel in eval_ds.qrels_iter():
             fh.write(f"{qrel.query_id} 0 {qrel.doc_id} {qrel.relevance}\n")
+            n_qrels += 1
 
-    print(f"{dataset}: {len(docs)} docs, {len(queries)} queries -> {out}")
+    print(f"{dataset}: {len(docs)} docs, {len(queries)} queries, {n_qrels} qrels -> {out}")
     return docs, queries
 
 
