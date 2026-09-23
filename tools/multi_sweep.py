@@ -61,6 +61,7 @@ def main():
                         [l.split('"doc_id"', 1)[1].split('"')[1] for l in open(corpus) if '"doc_id"' in l])
     conds = ("pool25", "pool50", "pool75", "out50", "hard50") if a.hard else ("pool25", "pool50")
     keys = [k for k, _ in grid]
+    rows_printed = {}
     print("\t".join(keys + ["collection", "ql", "clean", "n25", "n50", "retention", "fb_gain"]))
     for combo in (list(itertools.product(*[v for _, v in grid])) or [()]):
         params = dict(base); params.update(zip(keys, combo))
@@ -69,6 +70,12 @@ def main():
             fb.set_params(**{k: v for k, v in fb.PARAMS.items()})
             fb.set_params(**params)
             fb.prepare(corpus)
+            if not rows_printed.get(name):
+                st = fb.stats()
+                print(f"# {name}: docs={st.get('docs')} avgdl={st.get('avgdl', 0):.1f} "
+                      f"mu={st.get('mu', 0):.0f} mu_loo={st.get('mu_loo', 0):.0f} "
+                      f"qlen={sum(len(fb.analyze(t)) for _, t in queries) / max(1, len(queries)):.1f}", flush=True)
+                rows_printed[name] = True
             m = evaluate(queries, qrels, cands, docs, conds)
             rows.append((name, m))
             print("\t".join([f"{x:g}" for x in combo] + [name] + [f"{m[k]:.4f}" for k in

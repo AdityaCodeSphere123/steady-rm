@@ -54,7 +54,7 @@ _FLAG_SETS = [
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0,
     "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    "smoothing": 0, "mu": 0, "mu_factor": 6, "mu_min": 250, "mu_max": 2500,
+    "smoothing": 0, "mu": 0, "mu_factor": 4, "mu_min": 250, "mu_max": 2500, "mu_mode": 0, "mu_loo_scale": 5,
     "w_od": 0.20, "w_uw": 0.10, "uw_window": 8,
     "lead_w": 0.15, "lead_len": 12, "lead_mu": 50,   # A1 title-window idea as a field LM
     "prior_w": 0.30,

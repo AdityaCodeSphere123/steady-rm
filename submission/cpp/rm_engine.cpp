@@ -24,7 +24,8 @@ namespace rm {
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
-    X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi)
+    X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
+    X(mu_mode) X(mu_loo_scale) X(mu_loo_docs)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -275,6 +276,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     scratch_.clear();
     for (int w = 0; w < pool_->workers(); ++w) scratch_.emplace_back(new Scratch(vocab_.size()));
     pair_cf_.clear();
+    estimate_mu_loo();
     path_ = path;
     tok_cfg_sig_ = sig;
     ready_ = true;
@@ -286,13 +288,68 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
 std::string Engine::stats_json() const {
     std::ostringstream o;
     o << "{\"docs\":" << n_docs() << ",\"vocab\":" << vocab_.size() << ",\"tokens\":" << total_
-      << ",\"avgdl\":" << avgdl_ << ",\"mu\":" << mu_eff() << ",\"threads\":" << pool_->workers()
+      << ",\"avgdl\":" << avgdl_ << ",\"mu\":" << mu_eff() << ",\"mu_loo\":" << mu_loo_ << ",\"threads\":" << pool_->workers()
       << ",\"prepare_seconds\":" << prepare_seconds_ << "}";
     return o.str();
 }
 
+// Leave-one-out log likelihood of the collection under Dirichlet smoothing:
+//   L(mu) = sum_D sum_w c(w,D) log((c(w,D) - 1 + mu p(w|C)) / (|D| - 1 + mu))
+// L is maximised where dL/dmu = 0:
+//   g(mu) = sum_D sum_w c(w,D) [ p(w|C)/(c-1+mu p) - 1/(|D|-1+mu) ]
+// g is found by bisection on log(mu) over an evenly spaced document sample.
+void Engine::estimate_mu_loo() {
+    mu_loo_ = 0;
+    const size_t N = n_docs();
+    if (N == 0 || total_ == 0) return;
+    const size_t S = std::min<size_t>(N, static_cast<size_t>(std::max(100.0, P.mu_loo_docs)));
+    struct Row { float c, p; };
+    const int W = pool_->workers();
+    std::vector<std::vector<Row>> rows(W);
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> docs(W);   // (row end, |D|)
+    std::vector<size_t> sample(S);
+    for (size_t i = 0; i < S; ++i) sample[i] = i * N / S;
+    const double T = static_cast<double>(total_);
+    // One task per worker, each taking a contiguous slice of the sample.
+    pool_->run(W, [&](size_t w, int wk) {
+        Scratch& sc = *scratch_[wk];
+        for (size_t i = S * w / W; i < S * (w + 1) / W; ++i) {
+            auto b = bag(static_cast<int32_t>(sample[i]), sc);
+            uint32_t dl = static_cast<uint32_t>(tok_off_[sample[i] + 1] - tok_off_[sample[i]]);
+            if (dl < 2) continue;
+            for (auto& [t, c] : b) rows[w].push_back({static_cast<float>(c), static_cast<float>(cf_[t] / T)});
+            docs[w].push_back({static_cast<uint32_t>(rows[w].size()), dl});
+        }
+    });
+    auto g = [&](double mu) {
+        std::vector<double> part(W, 0.0);
+        pool_->run(W, [&](size_t w, int) {
+            double acc = 0; uint32_t r = 0;
+            for (auto& [end, dl] : docs[w]) {
+                const double inv = 1.0 / (dl - 1 + mu);
+                for (; r < end; ++r) {
+                    const double c = rows[w][r].c, p = rows[w][r].p;
+                    acc += c * (p / (c - 1 + mu * p) - inv);
+                }
+            }
+            part[w] = acc;
+        });
+        double t = 0; for (double x : part) t += x; return t;
+    };
+    double lo = std::log(1.0), hi = std::log(1e6);
+    if (g(std::exp(lo)) <= 0) { mu_loo_ = 1.0; return; }
+    if (g(std::exp(hi)) >= 0) { mu_loo_ = 1e6; return; }
+    for (int it = 0; it < 50; ++it) {
+        double mid = 0.5 * (lo + hi);
+        (g(std::exp(mid)) > 0 ? lo : hi) = mid;
+    }
+    mu_loo_ = std::exp(0.5 * (lo + hi));
+}
+
 double Engine::mu_eff() const {
     if (P.mu > 0) return P.mu;
+    if (P.mu_mode >= 1 && mu_loo_ > 0)
+        return std::min(P.mu_max, std::max(P.mu_min, P.mu_loo_scale * mu_loo_));
     double m = P.mu_factor * avgdl_;
     if (!(m > 0)) return 1000.0;
     return std::min(P.mu_max, std::max(P.mu_min, m));

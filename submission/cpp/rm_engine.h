@@ -35,6 +35,10 @@ struct Params {
     double mu = 0;               // >0: fixed mu; 0: mu_factor * avgdl, clamped
     double mu_factor = 12, mu_min = 250, mu_max = 2500;
     double jm_lambda = 0.5;      // JM weight on P(w|C)
+    // mu_mode 1: mu = mu_loo_scale * (leave-one-out ML estimate of mu on the
+    // collection itself; Zhai & Lafferty 2002, two-stage smoothing). Needs no
+    // relevance judgments, so it adapts to an unseen collection. [prep]
+    double mu_mode = 0, mu_loo_scale = 1.0, mu_loo_docs = 5000;
     // Sequential dependence (Metzler & Croft 2005). Weights are relative to
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
@@ -161,6 +165,8 @@ private:
     uint64_t total_ = 0;
     double avgdl_ = 0;
     double prepare_seconds_ = 0;
+    double mu_loo_ = 0;
+    void estimate_mu_loo();
 
     StrTable docids_;                   // id -> first doc index
     std::vector<int32_t> docid_to_doc_;
