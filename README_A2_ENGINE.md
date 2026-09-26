@@ -19,3 +19,10 @@ into the repo (keep the repo's own `submission/__init__.py` etc.).
 * `python -m tools.make_adversarial --root data/full --n 5` — writes
   `submission/adversarial_set.json` for the round-robin bonus.
 * `python -m tools.bench ...` with `RM_TIMING=1` — speed breakdown.
+
+## Safety checks (all pass)
+* `python -m tests.test_fuzz` — 1200 hostile calls (bad JSON, duplicate ids,
+  unicode, empty/300-term queries, unknown ids, k = -1/0/1000).
+* Same tests under AddressSanitizer + UBSan and ThreadSanitizer (4 threads):
+  see the docstring of tests/test_fuzz.py for the command.
+* Rankings are byte-identical with 1, 2 and 4 threads.

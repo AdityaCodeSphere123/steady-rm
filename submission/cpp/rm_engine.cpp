@@ -223,6 +223,11 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
             sh.doc_end.push_back(sh.toks.size());
             sh.ids.emplace_back(doc.id);
         }
+        // The surface-form cache is only needed while tokenising; free it now
+        // so peak memory is not (number of chunks) x (chunk vocabulary).
+        sh.surf = StrTable(16);
+        std::vector<uint32_t>().swap(sh.surf_to_local);
+        std::vector<uint32_t>().swap(sh.stamp);
     });
     if (map) munmap(map, size);
     phase("tokenise");
@@ -467,7 +472,7 @@ void Engine::build_postings() {
     const size_t V = vocab_.size(), N = n_docs();
     uint64_t total = 0;
     for (uint32_t d : df_) total += d;
-    if (V == 0 || total > (1ull << 29)) return;     // > 2 GB: fall back to corpus scans
+    if (V == 0 || total > (1ull << 28)) return;     // > 1 GB: fall back to corpus scans (8 GB VM)
     post_off_.assign(V + 1, 0);
     for (size_t t = 0; t < V; ++t) post_off_[t + 1] = post_off_[t] + df_[t];
     post_.assign(total, 0);
@@ -555,6 +560,11 @@ void Engine::ensure_pair_stats(Query& q) {
 // ---------------------------------------------------------------------------
 // Smoothed document language model
 // ---------------------------------------------------------------------------
+double Engine::long_query_scale(const Query& q) const {
+    if (P.longq_n <= 0 || q.len() <= P.longq_n) return 1.0;
+    return P.longq_n / static_cast<double>(q.len());
+}
+
 double Engine::log_p(uint32_t tf, uint32_t dlen, double pc) const {
     if (P.smoothing >= 1) {
         const double l = P.jm_lambda;
@@ -586,9 +596,7 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         }
     }
     const double T = static_cast<double>(total_);
-    const double qn0 = static_cast<double>(q.len());
-    const double fade = (P.longq_n > 0 && qn0 > P.longq_n) ? P.longq_n / qn0 : 1.0;
-    const double lw = P.lead_w * fade;
+    const double lw = P.lead_w * long_query_scale(q);
     const double ll = std::min<double>(dlen, lead_len), lmu = P.lead_mu;
     for (size_t u = 0; u < U; ++u) {
         const double pc = cf_[q.uniq[u]] / T;
@@ -641,13 +649,13 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
         }
     }
     const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
-    const double fade = (P.longq_n > 0 && qn > P.longq_n) ? P.longq_n / qn : 1.0;
+    const double lq_scale = long_query_scale(q);
     auto one = [&](size_t i, Scratch& s) {
         const int32_t d = docs[i];
         DocFeat f = doc_features(q, d, s);
         double qs = qpart(q, f, sdm);
         const double lprior = P.len_prior != 0 && d >= 0
-            ? P.len_prior * fade * std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d])) : 0.0;
+            ? P.len_prior * lq_scale * std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d])) : 0.0;
         if (!model) { out[i] = qs + lprior; return; }
         double rmp = base_const;
         uint32_t dlen = 0;

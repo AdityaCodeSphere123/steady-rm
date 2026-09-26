@@ -29,7 +29,7 @@ from tools.sweep import ndcg10, read_candidates, read_qrels, read_queries
 
 NAIVE = dict(beta=0, anchor_min=0, term_support=1, agree_gamma=0, fb_terms=50, fb_docs=10,
              w_od=0, w_uw=0, prior_w=0, fb_prior_w=0, lead_w=0, qlen_shrink=0, min_cf=1,
-             rm2_mix=0, per_doc_cap=1, fb_mu=0, idf_power=0, len_prior=0, qpp_w=0, small_seed_n=0, rm_variant=3)
+             rm2_mix=0, per_doc_cap=1, fb_mu=0, idf_power=0, len_prior=0, qpp_w=0, small_seed_n=0, longq_n=0, rm_variant=3)
 NAIVE["lambda"] = 0.5
 TEXTBOOK = dict(NAIVE, beta=-1)
 DEFENDERS = {"naive": NAIVE, "textbook": TEXTBOOK, "ours": {}}

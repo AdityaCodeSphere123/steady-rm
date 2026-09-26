@@ -19,29 +19,27 @@ submission/feedback.py.
 import argparse, json, multiprocessing as mp, os, sys, time
 
 SPACE = {
-    # Track A — centred on kept values; edge knobs extend past the last grid
-    "mu_factor": [3, 4, 5],
-    "prior_w": [0.2, 0.3, 0.45, 0.6],
+    # Round 2 grid: centred on the first tuning run, extended where the kept
+    # value sat on the edge of the old grid (lead_w, w_od, fb_mu, prior_k,
+    # idf_power).
+    # Track A
+    "mu_factor": [3.5, 4, 4.5],
+    "prior_w": [0.25, 0.3, 0.35],
     "prior_k": [10, 20, 40],
-    "len_prior": [0.15, 0.25, 0.4],
-    "lead_w": [0.2, 0.25, 0.35],
-    "w_od": [0.05, 0.1, 0.15],
-    "w_uw": [0.05, 0.1, 0.2],
-    "qstop_min_len": [3, 5],
+    "len_prior": [0.15, 0.25, 0.35],
+    "lead_w": [0.25, 0.35, 0.45],
     "longq_n": [0, 16, 24],
+    "w_od": [0.05, 0.1, 0.15],
+    "w_uw": [0.05, 0.1, 0.15],
     # Feedback
-    "fb_docs": [5, 10],
-    "fb_terms": [15, 20, 30],
-    "beta": [0.5, 1, 2],
-    "agree_gamma": [0, 1, 2],
-    "rm2_mix": [0, 0.3],
-    "idf_power": [0.25, 0.5, 0.75],
-    "fb_mu": [100, 200, 400],
+    "fb_terms": [15, 20, 25],
+    "beta": [1, 1.5, 2],
+    "fb_mu": [100, 200, 400, 800],
+    "idf_power": [0.25, 0.5, 0.75, 1.0],
     "term_support": [1, 2],
-    "lambda_min": [0.35, 0.45, 0.55],
+    "lambda_min": [0.4, 0.45, 0.5],
     "lambda_max": [0.8, 0.85, 0.9],
-    "coh_w": [0.4, 0.65, 0.9],
-    "fb_prior_w": [-1, 0.15, 0.45],
+    "coh_w": [0.5, 0.65, 0.8],
 }
 
 _fb = None

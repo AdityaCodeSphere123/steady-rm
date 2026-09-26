@@ -49,9 +49,10 @@ struct Params {
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
     // Document-length prior P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
     double len_prior = 0.0;
-    // A1 long-query rule: past longq_n terms, lead_w and len_prior fade by
-    // longq_n/|Q| (0 = off). ArguAna's document-as-query (~92 terms) should
-    // not get a title-window or length prior; short queries are untouched.
+    // A1's query-length rule (retrieve() dropped the title bonus on long
+    // queries): past longq_n terms, lead_w and len_prior are scaled by
+    // longq_n/|Q|. Document-like queries (ArguAna) are not helped by
+    // title matching or a length prior. 0 = off.
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
@@ -138,6 +139,7 @@ private:
     struct DocFeat { double uni = 0, od = 0, uw = 0; uint32_t matched = 0; };
 
     double mu_eff() const;
+    double long_query_scale(const Query& q) const;
     Query parse_query(std::string_view q);
     int32_t doc_index(std::string_view id) const;
     void ensure_pair_stats(Query& q);
