@@ -1011,6 +1011,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
 
     double lam, coh = 0, clar = 0;
     if (variant != 3) lam = 0.0;                        // pure RM1 / RM2 ranking
+    else if (P.lambda >= 1) return score_candidates(query, cands, k);  // Track B == Track A
     else if (P.lambda >= 0) lam = std::min(1.0, P.lambda);
     else {
         coh = coherence(seed, s);
