@@ -52,17 +52,16 @@ _FLAG_SETS = [
 # the C++ default. Tuned on a Cranfield proxy -- RETUNE ON THE DEV SET with
 # tools/sweep.py before the deadline.
 PARAMS: Dict[str, float] = {
-    # Analysis. SciDocs-max: query+doc stops, stemmer 2.
-    "stemmer": 2, "doc_stop": 1, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    # SciDocs-max Track A: paper-title queries, abstracts, BM25 recall@100 ~0.34
-    # so nDCG@10 saturates near 0.17. Strong Dirichlet + SDM + light lead.
-    # RM3 did not help; keep lambda=1. High mu_factor is a COVID-max-like risk.
-    "smoothing": 0, "mu": 0, "mu_factor": 24, "mu_min": 150, "mu_max": 4000, "mu_mode": 0,
-    "w_od": 0.35, "w_uw": 0.10, "uw_window": 8,
-    "lead_w": 0.18, "lead_len": 12, "lead_mu": 30,
-    "len_prior": 0.0,
+    # Analysis. Vaswani-max: same as SciFact-max (doc_stop=0, query_stop=1).
+    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
+    # Vaswani-max Track A: short NPL abstracts (~25–40 tokens), 93 title-like queries.
+    # Stronger lead than SciFact. RM3 +B at C<1; keep lambda=1.
+    "smoothing": 0, "mu": 0, "mu_factor": 1, "mu_min": 150, "mu_max": 2500, "mu_mode": 0,
+    "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
+    "lead_w": 0.40, "lead_len": 12, "lead_mu": 40,
+    "len_prior": 0.10,
     "longq_n": 0,
-    "prior_w": 0.25, "prior_k": 18,
+    "prior_w": 0.35, "prior_k": 20,
     # Feedback: lambda=1 so B=A and C=1.
     "rm_variant": 3, "rm2_mix": 0.0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,

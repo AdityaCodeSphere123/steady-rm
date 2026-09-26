@@ -8,7 +8,7 @@ The released staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 uniqu
 
 Local TREC-COVID uses that staff pool. Other collections use a BM25-generated pool.
 
-Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**. SciFact-max local **0.6908** **raised** hidden A **0.5149 → 0.5294**. SciDocs-max local **0.1666** dropped hidden A **0.5294 → 0.5014**.
+Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**. SciFact-max local **0.6908** **raised** hidden A **0.5149 → 0.5294**. SciDocs-max local **0.1666** dropped hidden A **0.5294 → 0.5014**. Vaswani-max local **0.4426** recovered hidden A **0.5014 → 0.5243** (still below SciFact-max **0.5294**).
 
 ---
 
@@ -43,10 +43,11 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **ArguAna-max** | `query_stop=0`, `mu_min=50`, `mu_factor=0.5`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0`, `prior_w=0.08`, `lambda=1` | **0.5149** | **0.4403** | **0.5149** | **1.0000** | **0.6100** | **2 / 7** | 23:08 |
 | **SciFact-max** | `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=250`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.14`, `lead_len=12`, `lead_mu=60`, `prior_w=0.35`, `prior_k=20`, `lambda=1` | **0.5294** | **0.4526** | **0.5294** | **1.0000** | **0.7700** | **1 / 7** | 23:17 |
 | **SciDocs-max** | `doc_stop=1`, `mu_factor=24`, `mu_max=4000`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0.18`, `lead_len=12`, `lead_mu=30`, `prior_w=0.25`, `prior_k=18`, `lambda=1` | **0.5014** | **0.4169** | **0.5014** | **1.0000** | **0.4550** | **4 / 8** | 23:23 |
+| **Vaswani-max** | `doc_stop=0`, `mu_min=150`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.40`, `lead_len=12`, `lead_mu=40`, `prior_w=0.35`, `prior_k=20`, `len_prior=0.10`, `lambda=1` | **0.5243** | **0.4462** | **0.5243** | **1.0000** | **0.5714** | **3 / 8** (tie) | 23:31 |
 
-Snapshot 23:27 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6417; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.6167; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5667; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.4083; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3517; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1100.
+Snapshot 23:33 field (raw): Gupta 0.5272 / 0.4501 / 0.5295 / 0.9714 → 0.6143; Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6071; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.5714; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.4571; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3500; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3429; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.0857.
 
-FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. SciFact-max (`doc_stop=0`, `query_stop=1`, mild SDM + lead) **retook 1st**: hidden A **0.5149 → 0.5294**, MAP **0.4403 → 0.4526**, B=A, C=1, final **0.6100 → 0.7700**, rank **2 → 1**. That is the best hidden A/MAP of our submits. SciDocs-max (`doc_stop=1`, `mu_factor=24`) is the COVID-max pattern again: local nDCG is recall-capped at **0.1666**, hidden A **0.5294 → 0.5014**, MAP **0.4526 → 0.4169**, final **0.7700 → 0.4550**, rank **1 → 4 / 8**. C stayed 1. Goel is new (A 0.5274, B 0.5277, C 0.9396 → 0.6167). Bansal 0.6417. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627) but the high-`mu_factor` family is the same risk.
+FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. SciFact-max (`doc_stop=0`, `query_stop=1`, mild SDM + lead) **retook 1st**: hidden A **0.5149 → 0.5294**, MAP **0.4403 → 0.4526**, B=A, C=1, final **0.6100 → 0.7700**, rank **2 → 1**. That is the best hidden A/MAP of our submits. SciDocs-max (`doc_stop=1`, `mu_factor=24`) is the COVID-max pattern again: local nDCG is recall-capped at **0.1666**, hidden A **0.5294 → 0.5014**, MAP **0.4526 → 0.4169**, final **0.7700 → 0.4550**, rank **1 → 4 / 8**. Vaswani-max (SciFact-max family, stronger `lead_w=0.40`) **recovered A** from SciDocs: **0.5014 → 0.5243**, MAP **0.4169 → 0.4462**, final **0.4550 → 0.5714**, rank **4 → 3 / 8** (tied with Goel). Still **below SciFact-max** (0.5294 / 0.4526 / 0.7700). Gupta is new 1st (A 0.5272, **B 0.5295**, C 0.9714 → 0.6143) — expansion helps her B; C is not 1. Field percentiles moved (Bansal 0.6417 → 0.6071) as the class grew.
 
 ---
 
@@ -187,7 +188,7 @@ Two-index descent (`doc_stop=0` vs `1`); `doc_stop=1` won. 500/500 split for the
 | `doc_stop=1` descent | 0.1658 | 0.0978 | 0.1658 | 1.0000 |
 | **SciDocs-max**: `doc_stop=1`, `mu_factor=24`, `mu_max=4000`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0.18`, `lead_len=12`, `lead_mu=30`, `prior_w=0.25`, `prior_k=18` | **0.1666** | **0.0982** | **0.1666** | **1.0000** |
 
-RM3 at `lambda=0.7` was B 0.1659 vs A 0.1658 with C 0.9952; left off. Live `feedback.py` is this cell. **High `mu_factor` is the COVID-max family** that already tanked hidden A once (`lead_w=0.60`, `mu_factor=12` → A 0.4627). SciFact-max (hidden 1st, A 0.5294) used `doc_stop=0` and `mu_factor=1`.
+RM3 at `lambda=0.7` was B 0.1659 vs A 0.1658 with C 0.9952; left off. Live `feedback.py` was this cell until Vaswani-max. **High `mu_factor` is the COVID-max family** that already tanked hidden A once (`lead_w=0.60`, `mu_factor=12` → A 0.4627). SciFact-max (hidden 1st, A 0.5294) used `doc_stop=0` and `mu_factor=1`.
 
 ### Hidden (after submitting SciDocs-max) — 23:23, 26 Sep
 
@@ -196,6 +197,36 @@ Undisclosed live collection (not SciDocs, not TREC-COVID). Same pattern as COVID
 | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
 |---|---|---|---|---|---|
 | 0.5014 | 0.4169 | 0.5014 | 1.0000 | 0.4550 | 4 / 8 |
+
+---
+
+## Vaswani (`ir_datasets` NPL / `data/vaswani`)
+
+Short scientific abstracts (~42 raw words, ~25 tokens after doc stops / ~40 without). 11429 docs, 93 queries (~11 words), 2083 positive qrels (~22/query). BM25 pool recall@100 **0.4570**. MAP@10 is small because AP divides by all relevants.
+
+A 46/47 split overfit (tune ~0.52 vs hold ~0.34). Numbers below are **all 93 queries**.
+
+### Local (BM25 pool), `lambda=1` so B=A and C=1
+
+| PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C |
+|---|---|---|---|---|
+| SciDocs-max (`doc_stop=1`, `mu_factor=24`) | 0.4195 | 0.1509 | 0.4195 | 1.0000 |
+| Touche-like | 0.4107 | 0.1479 | 0.4107 | 1.0000 |
+| FiQA-like | 0.4319 | 0.1542 | 0.4319 | 1.0000 |
+| NF-like | 0.4348 | 0.1599 | 0.4348 | 1.0000 |
+| SciFact-max | 0.4352 | 0.1590 | 0.4352 | 1.0000 |
+| `doc_stop=1` full descent | 0.4415 | 0.1619 | 0.4415 | 1.0000 |
+| **Vaswani-max**: `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=150`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.40`, `lead_len=12`, `lead_mu=40`, `prior_w=0.35`, `prior_k=20`, `len_prior=0.10` | **0.4426** | **0.1618** | **0.4426** | **1.0000** |
+
+Same indexing family as SciFact-max (`doc_stop=0`); mainly a stronger lead. RM3 at `lambda=0.7` was B 0.4484 with C 0.9901; left off. Live `feedback.py` is this cell. SciFact-max is still the best **hidden** A/MAP of our submits (0.5294 / 0.4526 / 0.7700).
+
+### Hidden (after submitting Vaswani-max) — 23:31, 26 Sep
+
+Undisclosed live collection (not Vaswani, not TREC-COVID). Recovered from SciDocs-max but did not beat SciFact-max. Rank **3 / 8**, tied with Goel on final **0.5714**.
+
+| A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
+|---|---|---|---|---|---|
+| 0.5243 | 0.4462 | 0.5243 | 1.0000 | 0.5714 | 3 / 8 (tie) |
 
 ---
 
