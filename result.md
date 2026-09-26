@@ -8,7 +8,7 @@ The released staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 uniqu
 
 Local TREC-COVID uses that staff pool. Other collections use a BM25-generated pool.
 
-Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**.
+Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**. SciFact-max local **0.6908** **raised** hidden A **0.5149 → 0.5294**.
 
 ---
 
@@ -41,10 +41,11 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **Quora-max** | `mu_min=50`, `w_od=0.10`, `lead_w=0.65`, `lead_len=6`, `lead_mu=8`, `prior_w=0.40`, `prior_k=5`, `lambda=1` | **0.4999** | **0.4210** | **0.4999** | **1.0000** | **0.4880** | — | 22:44 |
 | **Touche2020-max** | unigram, `lead_w=0`, `mu_factor=8`, `prior_w=0.35`, `prior_k=12`, `len_prior=0.15`, `lambda=1` | **0.5284** | **0.4489** | **0.5284** | **1.0000** | **0.7700** | **1 / 7** | 22:50 |
 | **ArguAna-max** | `query_stop=0`, `mu_min=50`, `mu_factor=0.5`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0`, `prior_w=0.08`, `lambda=1` | **0.5149** | **0.4403** | **0.5149** | **1.0000** | **0.6100** | **2 / 7** | 23:08 |
+| **SciFact-max** | `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=250`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.14`, `lead_len=12`, `lead_mu=60`, `prior_w=0.35`, `prior_k=20`, `lambda=1` | **0.5294** | **0.4526** | **0.5294** | **1.0000** | **0.7700** | **1 / 7** | 23:17 |
 
-Snapshot 23:10 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6400; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5000; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.4900; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3400; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1200.
+Snapshot 23:19 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.5900; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5000; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3800; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3400; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1200.
 
-FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. C stayed 1. Bansal’s final rose 0.5900 → 0.6400 from the percentile shift. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627).
+FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. SciFact-max (`doc_stop=0`, `query_stop=1`, mild SDM + lead) **retook 1st**: hidden A **0.5149 → 0.5294**, MAP **0.4403 → 0.4526**, B=A, C=1, final **0.6100 → 0.7700**, rank **2 → 1**. That is the best hidden A/MAP of our submits (edges Touche 0.5284 / 0.4489), same percentile final **0.7700**. Bansal’s final fell 0.6400 → 0.5900 from the percentile shift. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627).
 
 ---
 
@@ -138,14 +139,32 @@ Undisclosed live collection (not NFCorpus, not TREC-COVID).
 
 ## SciFact (`beir/scifact`, `data/scifact`)
 
-Scientific claims as queries (~8.4 tokens), 5183 docs, avgdl ~214. BM25 pool. `lambda=1` so B=A, C=1.
+Scientific claims as queries (~12.5 raw words, ~8.4 tokens after query stops). 5183 paper abstracts, 300 queries, 339 positive qrels (~1.13/query). BM25 pool recall@100 **0.8761**. With `doc_stop=0`, avgdl ~214 tokens.
 
-| PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention |
+### Local (BM25 pool), `lambda=1` so B=A and C=1
+
+3-round coordinate descent plateaued; a dense grid around the peak added +0.0005. RM3 never beat `lambda=1`. First/last 150 queries split 0.722 vs 0.659 — topic variance, not a second collection.
+
+| PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C |
 |---|---|---|---|---|
-| FiQA-max | 0.6823 | — | 0.6823 | 1.0000 |
-| Peak: `w_od=0.2`, `w_uw=0.1`, `lead_w=0.2`, `prior_w=0.2`, `mu_factor=1`, `mu_min=250`, `len_prior=0`, `lead_len=16`, `prior_k=10` | **0.6898** | — | **0.6898** | **1.0000** |
+| ArguAna-max (`query_stop=0`, `doc_stop=1`) | 0.6722 | 0.6258 | 0.6722 | 1.0000 |
+| Touche-like | 0.6668 | 0.6192 | 0.6668 | 1.0000 |
+| FiQA-like (`query_stop=1`, `doc_stop=1`) | 0.6814 | 0.6378 | 0.6814 | 1.0000 |
+| NF-like (`doc_stop=1`) | 0.6829 | 0.6382 | 0.6829 | 1.0000 |
+| Earlier peak (`doc_stop=1`) | 0.6811 | 0.6367 | 0.6811 | 1.0000 |
+| `doc_stop=1` scoring max | 0.6869 | 0.6434 | 0.6869 | 1.0000 |
+| Earlier recorded peak (`w_od=0.2`, `lead_w=0.2`, `mu_min=250`) | 0.6898 | — | 0.6898 | 1.0000 |
+| **SciFact-max**: `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=250`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.14`, `lead_len=12`, `lead_mu=60`, `prior_w=0.35`, `prior_k=20` | **0.6908** | **0.6485** | **0.6908** | **1.0000** |
 
-SciFact peak is a local-only cell. Live PARAMS are now **ArguAna-max**.
+Live `feedback.py` is this cell. **`doc_stop=0` changes indexing vs Touche2020-max / ArguAna-max.**
+
+### Hidden (after submitting SciFact-max) — 23:17, 26 Sep
+
+Undisclosed live collection (not SciFact, not TREC-COVID). Best hidden A/MAP of our submits. Rank **1 / 7**, final **0.7700** (same percentile as Touche2020-max, higher raw A/MAP).
+
+| A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
+|---|---|---|---|---|---|
+| 0.5294 | 0.4526 | 0.5294 | 1.0000 | 0.7700 | 1 / 7 |
 
 ---
 
@@ -225,7 +244,7 @@ Touche2020-max is a bad fit here (short yes/no queries vs document-as-query): hi
 | scoring-only peak (`query_stop=1`) | 0.4106 | 0.2789 | 0.4106 | 1.0000 |
 | **ArguAna-max**: `query_stop=0`, `mu_min=50`, `mu_factor=0.5`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0`, `prior_w=0.08`, `prior_k=20`, `len_prior=0.20`, `longq_n=32` | **0.4177** | **0.2853** | **0.4177** | **1.0000** |
 
-Tune/hold for the `query_stop=1` scoring peak: tune-700 A **0.4075**, hold-706 A **0.4136**. RM3 at `lambda=0.55` was B 0.4116 vs A 0.4106 with C 0.9979; left off. Live `feedback.py` is ArguAna-max.
+Tune/hold for the `query_stop=1` scoring peak: tune-700 A **0.4075**, hold-706 A **0.4136**. RM3 at `lambda=0.55` was B 0.4116 vs A 0.4106 with C 0.9979; left off. Live `feedback.py` was this cell until SciFact-max.
 
 ### Hidden (after submitting ArguAna-max) — 23:08, 26 Sep
 

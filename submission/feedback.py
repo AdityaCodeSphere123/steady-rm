@@ -52,18 +52,17 @@ _FLAG_SETS = [
 # the C++ default. Tuned on a Cranfield proxy -- RETUNE ON THE DEV SET with
 # tools/sweep.py before the deadline.
 PARAMS: Dict[str, float] = {
-    # Analysis. query_stop=0 keeps function words on document-length queries
-    # (+~0.005 nDCG on ArguAna). This also changes short-query tokenisation.
-    "stemmer": 2, "doc_stop": 1, "query_stop": 0, "qstop_min_len": 3, "qstop_list": 1,
-    # ArguAna-max Track A: document-as-query, 1 relevant/query, high BM25 recall.
-    # Light Dirichlet (mu_min=50), SDM phrases, no lead, tiny BM25 prior.
-    # RM3 +0.001 B at C<1; keep lambda=1.
-    "smoothing": 0, "mu": 0, "mu_factor": 0.5, "mu_min": 50, "mu_max": 2500, "mu_mode": 0,
-    "w_od": 0.35, "w_uw": 0.10, "uw_window": 8,
-    "lead_w": 0.0, "lead_len": 24, "lead_mu": 10,
-    "len_prior": 0.20,
-    "longq_n": 32,
-    "prior_w": 0.08, "prior_k": 20,
+    # Analysis. SciFact-max: keep query stops, do NOT stop documents
+    # (doc_stop=0 recovered the old 0.6898 neighbourhood).
+    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
+    # SciFact-max Track A: scientific claims (~8–12 tokens), abstracts.
+    # RM3 hurt B on this pool; keep lambda=1.
+    "smoothing": 0, "mu": 0, "mu_factor": 1, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
+    "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
+    "lead_w": 0.14, "lead_len": 12, "lead_mu": 60,
+    "len_prior": 0.0,
+    "longq_n": 0,
+    "prior_w": 0.35, "prior_k": 20,
     # Feedback: lambda=1 so B=A and C=1.
     "rm_variant": 3, "rm2_mix": 0.0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
