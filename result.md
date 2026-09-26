@@ -1,14 +1,14 @@
 # Local + hidden results
 
-`lambda = 1` unless noted. Hidden eval is always TREC-COVID held-out topics; local NFCorpus/FiQA numbers are a different collection.
+`lambda = 1` unless noted. The live leaderboard is an undisclosed held-out collection (not TREC-COVID). Local tables are whatever corpus is named in that section.
 
 ## Dataset identity
 
-The staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 unique IDs, qids `1`–`50`) matches **`beir/trec-covid` in `data/full` at 100%**. Coverage on every other local corpus (FiQA, SciFact, NFCorpus, Antique, …) is **0%**. Dev topics/qrels are the public TREC-COVID set; the live leaderboard is held-out topics on that same collection, not FiQA.
+The released staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 unique IDs, qids `1`–`50`) matches **`beir/trec-covid` in `data/full` at 100%**. Coverage on every other local corpus (FiQA, SciFact, NFCorpus, Antique, …) is **0%**. That file is the **local** TREC-COVID pool. The live leaderboard uses a **different, undisclosed** collection — not TREC-COVID.
 
 Local TREC-COVID uses that staff pool. Other collections use a BM25-generated pool.
 
-Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**.
+Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**.
 
 ---
 
@@ -27,9 +27,9 @@ So the ranked list is identical, nDCG matches, and noisy seeds cannot change the
 
 ---
 
-## Hidden / live leaderboard (graded TREC-COVID held-out)
+## Hidden / live leaderboard (undisclosed collection)
 
-Same topics every submit. Percentile final score, not raw average.
+Same hidden topics every submit. Percentile final score, not raw average. Not TREC-COVID.
 
 | submit | PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank | time |
 |---|---|---|---|---|---|---|---|---|
@@ -38,10 +38,11 @@ Same topics every submit. Percentile final score, not raw average.
 | COVID-max | unigram, `lead_w=0.60`, `mu_factor=12`, `len_prior=0.20` | 0.4627 | 0.3784 | 0.4627 | 1.0000 | 0.2625 | 5 / 6 | 21:44 |
 | **FiQA-max** | `w_od=w_uw=0.10`, `lead_w=0.40`, `len_prior=0`, `prior_w=0.30`, `prior_k=10`, `mu_factor=1`, `mu_min=150`, `lambda=1` | **0.5242** | **0.4467** | **0.5242** | **1.0000** | **0.6600** | **1 / 7** | 22:00 |
 | **NFCorpus-max** | `doc_stop=1`, `lead_mu=20`, `w_od=0.2`, `w_uw=0`, `lead_w=0.2`, `prior_w=0.15`, `mu_factor=4`, `lambda=0.5` | **0.5265** | **0.4467** | **0.4992** | **0.9712** | **0.4180** | **4 / 7** | 22:18 |
+| **Quora-max** | `mu_min=50`, `w_od=0.10`, `lead_w=0.65`, `lead_len=6`, `lead_mu=8`, `prior_w=0.40`, `prior_k=5`, `lambda=1` | **0.4999** | **0.4210** | **0.4999** | **1.0000** | **0.4880** | — | 22:44 |
 
 Snapshot 22:20 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.7100; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5850; Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.4420.
 
-FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180.
+FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880** (C recovered; A/MAP lost vs FiQA-max 0.5242 / 0.4467 / 0.6600).
 
 ---
 
@@ -117,15 +118,15 @@ Short medical title queries (~3.3 raw words, ~2.4 after stops). 3633 docs, 323 q
 | Earlier peak (`prior_w=0.2`, `len_prior=0.1`) | 0.3216 | 0.3216 | 1.0000 |
 | Track A max: `doc_stop=1`, `lead_mu=20`, `w_od=0.2`, `w_uw=0`, `lead_w=0.2`, `prior_w=0.15`, `mu_factor=4`, `len_prior=0` | **0.3229** | 0.3229 | 1.0000 |
 | + RM3 `lambda=0.65` | 0.3229 | 0.3245 | 0.9974 |
-| + RM3 `lambda=0.5`, `fb_mu=400`, `fb_terms=20` (live PARAMS) | 0.3229 | **0.3258** | 0.9874 |
+| + RM3 `lambda=0.5`, `fb_mu=400`, `fb_terms=20` (previous live) | 0.3229 | **0.3258** | 0.9874 |
 | Full-corpus QL (no pool) | 0.3274 | 0.3274 | 1.0000 |
 | Full-corpus RM3 `lambda=0.5` | 0.3274 | 0.3393 | 0.9841 |
 
-Live `feedback.py` is this NFCorpus cell (`doc_stop=1` changes indexing). That is **not** the FiQA-max 1st-place submit.
+Live `feedback.py` was this NFCorpus cell until Quora-max (`lambda=1`). `doc_stop=1` still changes indexing vs FiQA-max 1st-place.
 
 ### Hidden (after submitting NFCorpus-max) — 22:18, 26 Sep
 
-Graded set is still held-out TREC-COVID, not NFCorpus.
+Undisclosed live collection (not NFCorpus, not TREC-COVID).
 
 | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
 |---|---|---|---|---|---|
@@ -142,4 +143,35 @@ Scientific claims as queries (~8.4 tokens), 5183 docs, avgdl ~214. BM25 pool. `l
 | FiQA-max | 0.6823 | — | 0.6823 | 1.0000 |
 | Peak: `w_od=0.2`, `w_uw=0.1`, `lead_w=0.2`, `prior_w=0.2`, `mu_factor=1`, `mu_min=250`, `len_prior=0`, `lead_len=16`, `prior_k=10` | **0.6898** | — | **0.6898** | **1.0000** |
 
-Live PARAMS stay on FiQA-max. SciFact peak is a local-only cell; do not submit it without a reason to leave 1st place.
+SciFact peak is a local-only cell. Live PARAMS are now **Quora-max**.
+
+---
+
+## Quora (`beir/quora`, `data/quora` + `data/quora_tune`)
+
+Duplicate-question retrieval. Docs and queries are short questions (raw avgdl ~10.9, ~5.7 tokens after stops). Full set: 522931 docs, 10000 queries, 15675 qrels. `data/quora/candidates_dev.jsonl` is empty; BM25 top-100 pools were built for an 800-query tune split (`data/quora_tune`, recall@100 **0.8052**) and a disjoint 400-query holdout (`data/quora_hold`, recall@100 **0.8103**).
+
+### Local Track A (`lambda=1` so B=A and C=1)
+
+NFCorpus-max RM3 (`lambda=0.5`) **hurts** Quora B (tune 0.6476 vs A 0.6875). Keep expansion off.
+
+| PARAMS | split | A nDCG@10 | A MAP@10 | B nDCG@10 | C |
+|---|---|---|---|---|---|
+| NFCorpus-max (`lambda=0.5`) | tune-800 | 0.6875 | 0.6179 | 0.6476 | 1.0000 |
+| FiQA-max (`lambda=1`) | tune-800 | 0.7012 | 0.6329 | 0.7012 | 1.0000 |
+| **Quora-max** | tune-800 | **0.7223** | **0.6563** | **0.7223** | **1.0000** |
+| NFCorpus-max (`lambda=0.5`) | hold-400 | 0.6980 | 0.6268 | 0.6498 | 1.0000 |
+| FiQA-max (`lambda=1`) | hold-400 | 0.7121 | 0.6405 | 0.7121 | 1.0000 |
+| **Quora-max** | hold-400 | **0.7364** | **0.6679** | **0.7364** | **1.0000** |
+
+Quora-max knobs (vs NFCorpus-max): `mu_min=50` (was 150; Dirichlet was oversmoothing 6-token docs), `w_od=0.10`, `w_uw=0`, `lead_w=0.65`, `lead_len=6`, `lead_mu=8`, `prior_w=0.40`, `prior_k=5`, `lambda=1`. Stemmer 2 + doc/query stops stay; turning stops off lost ~0.007–0.015.
+
+RM3 (`lambda` 0.5–0.95) never beat `lambda=1` on tune. Live `feedback.py` is this cell.
+
+### Hidden (after submitting Quora-max) — 22:44, 26 Sep
+
+Undisclosed live collection (not Quora, not TREC-COVID). Same pattern as COVID-max: local nDCG jumped, hidden A/MAP fell.
+
+| A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
+|---|---|---|---|---|---|
+| 0.4999 | 0.4210 | 0.4999 | 1.0000 | 0.4880 | — |
