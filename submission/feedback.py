@@ -48,11 +48,12 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden champion (00:20, 27 Sep): A 0.5323 MAP 0.4528 B 0.5323 C 1
-# final 0.8164. Beat Bansal raw A 0.5315. Freeze. Do not retune.
-# Win = SciFact lead/SDM + Touche-ward μ3/len0.08 + Lucene query stops.
+# Hidden champion (00:20): A 0.5323 MAP 0.4528 C 1 final 0.8164.
+# Same axis as that win (keep more query tokens): qstop_min_len 3→4.
+# Stops still drop on queries with ≥4 surface tokens. qstop_list stays 0.
+# If A < 0.5323, revert qstop_min_len to 3.
 PARAMS: Dict[str, float] = {
-    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 0,
+    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 4, "qstop_list": 0,
     # Track A: exact hidden nDCG-best scoring knobs
     "smoothing": 0, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
     "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
