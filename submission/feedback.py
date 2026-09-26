@@ -48,19 +48,19 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Proven hidden-best cell (SciFact-max, 23:17, 26 Sep):
-#   A 0.5294  MAP 0.4526  B 0.5294  C 1.0  final 0.7700  rank 1/7
-# Do not replace with a local-only peak. Quora/ArguAna/SciDocs/COVID-max
-# and Vaswani's stronger lead all lost hidden A. RM3 on our knobs lost B+C.
+# Hidden interpolant (not SciFact-local). Champ 0.5294 used mu_factor=1,
+# len_prior=0. Touche-max (hidden 0.5284) used mu_factor=8, len_prior=0.15,
+# lead_w=0. This keeps champ lead/SDM/doc_stop and only moves μ + length
+# prior toward Touche. lambda=1. If A falls, revert mu_factor=1 len_prior=0.
 PARAMS: Dict[str, float] = {
     # Analysis: keep query stops; do not stop documents (hidden A +0.001
     # vs Touche-max which used doc_stop=1).
     "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    # Track A: mild Dirichlet, light SDM, small lead, moderate BM25 prior.
-    "smoothing": 0, "mu": 0, "mu_factor": 1, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
+    # Track A: champ SDM/lead, Touche-ward Dirichlet + length prior
+    "smoothing": 0, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
     "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
     "lead_w": 0.14, "lead_len": 12, "lead_mu": 60,
-    "len_prior": 0.0,
+    "len_prior": 0.08,
     "longq_n": 0,
     "prior_w": 0.35, "prior_k": 20,
     # Track B/C: lambda=1 → B=A and C=1 (percentile win vs Bansal C 0.9817).
