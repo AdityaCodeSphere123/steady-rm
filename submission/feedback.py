@@ -55,12 +55,12 @@ PARAMS: Dict[str, float] = {
     # Analysis
     "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
     # Track A: Dirichlet QL + SDM + lead field + priors (tools/tune.py, 12 collections)
-    "smoothing": 0, "mu": 0, "mu_factor": 4, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
-    "w_od": 0.10, "w_uw": 0.10, "uw_window": 8,
-    "lead_w": 0.25, "lead_len": 12, "lead_mu": 50,
-    "len_prior": 0.25,
+    "smoothing": 0, "mu": 0, "mu_factor": 12, "mu_min": 250, "mu_max": 8000, "mu_mode": 0,
+    "w_od": 0.0, "w_uw": 0.0, "uw_window": 8,
+    "lead_w": 0.60, "lead_len": 16, "lead_mu": 50,
+    "len_prior": 0.20,
     "longq_n": 16,       # A1 long-query rule: fade lead_w / len_prior on document-like queries
-    "prior_w": 0.30, "prior_k": 20,
+    "prior_w": 0.50, "prior_k": 20,
     # Feedback: RM3 on RM1
     "rm_variant": 3, "rm2_mix": 0.0,
     "fb_mu": 200, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
