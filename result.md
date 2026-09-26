@@ -8,7 +8,7 @@ The released staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 uniqu
 
 Local TREC-COVID uses that staff pool. Other collections use a BM25-generated pool.
 
-Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**.
+Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**.
 
 ---
 
@@ -39,10 +39,11 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **FiQA-max** | `w_od=w_uw=0.10`, `lead_w=0.40`, `len_prior=0`, `prior_w=0.30`, `prior_k=10`, `mu_factor=1`, `mu_min=150`, `lambda=1` | **0.5242** | **0.4467** | **0.5242** | **1.0000** | **0.6600** | **1 / 7** | 22:00 |
 | **NFCorpus-max** | `doc_stop=1`, `lead_mu=20`, `w_od=0.2`, `w_uw=0`, `lead_w=0.2`, `prior_w=0.15`, `mu_factor=4`, `lambda=0.5` | **0.5265** | **0.4467** | **0.4992** | **0.9712** | **0.4180** | **4 / 7** | 22:18 |
 | **Quora-max** | `mu_min=50`, `w_od=0.10`, `lead_w=0.65`, `lead_len=6`, `lead_mu=8`, `prior_w=0.40`, `prior_k=5`, `lambda=1` | **0.4999** | **0.4210** | **0.4999** | **1.0000** | **0.4880** | — | 22:44 |
+| **Touche2020-max** | unigram, `lead_w=0`, `mu_factor=8`, `prior_w=0.35`, `prior_k=12`, `len_prior=0.15`, `lambda=1` | **0.5284** | **0.4489** | **0.5284** | **1.0000** | **0.7700** | **1 / 7** | 22:50 |
 
-Snapshot 22:20 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.7100; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5850; Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.4420.
+Snapshot 22:52 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.5900; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5000; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3800; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3400; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1200.
 
-FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880** (C recovered; A/MAP lost vs FiQA-max 0.5242 / 0.4467 / 0.6600).
+FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817 so percentile final is 0.5900. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627).
 
 ---
 
@@ -143,7 +144,7 @@ Scientific claims as queries (~8.4 tokens), 5183 docs, avgdl ~214. BM25 pool. `l
 | FiQA-max | 0.6823 | — | 0.6823 | 1.0000 |
 | Peak: `w_od=0.2`, `w_uw=0.1`, `lead_w=0.2`, `prior_w=0.2`, `mu_factor=1`, `mu_min=250`, `len_prior=0`, `lead_len=16`, `prior_k=10` | **0.6898** | — | **0.6898** | **1.0000** |
 
-SciFact peak is a local-only cell. Live PARAMS are now **Quora-max**.
+SciFact peak is a local-only cell. Live PARAMS are now **Touche2020-max**.
 
 ---
 
@@ -166,7 +167,7 @@ NFCorpus-max RM3 (`lambda=0.5`) **hurts** Quora B (tune 0.6476 vs A 0.6875). Kee
 
 Quora-max knobs (vs NFCorpus-max): `mu_min=50` (was 150; Dirichlet was oversmoothing 6-token docs), `w_od=0.10`, `w_uw=0`, `lead_w=0.65`, `lead_len=6`, `lead_mu=8`, `prior_w=0.40`, `prior_k=5`, `lambda=1`. Stemmer 2 + doc/query stops stay; turning stops off lost ~0.007–0.015.
 
-RM3 (`lambda` 0.5–0.95) never beat `lambda=1` on tune. Live `feedback.py` is this cell.
+RM3 (`lambda` 0.5–0.95) never beat `lambda=1` on tune. Live `feedback.py` was this cell until Touche2020-max.
 
 ### Hidden (after submitting Quora-max) — 22:44, 26 Sep
 
@@ -175,3 +176,31 @@ Undisclosed live collection (not Quora, not TREC-COVID). Same pattern as COVID-m
 | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
 |---|---|---|---|---|---|
 | 0.4999 | 0.4210 | 0.4999 | 1.0000 | 0.4880 | — |
+
+---
+
+## Touché 2020 (`beir/webis-touche2020`, `data/touche2020`)
+
+Argument retrieval: short yes/no debate queries, long web arguments. 382545 docs, 49 queries, 2962 qrel lines (2413 positive, ~49 relevant/query). Raw avgdl ~294 words, ~154 tokens after stops. Existing BM25 top-100 pool, recall@100 **0.4356**. MAP@10 is small because AP divides by all relevants (same effect as TREC-COVID).
+
+### Local (BM25 pool), `lambda=1` so B=A and C=1
+
+The lead field **hurts**: debate titles restated the motion, so `lead_w=0.65` (Quora-max) scored **0.4111**. Turning lead off jumped to ~0.48.
+
+| PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C |
+|---|---|---|---|---|
+| Quora-max | 0.4111 | 0.1289 | 0.4111 | 1.0000 |
+| FiQA-like scoring | 0.4206 | 0.1395 | 0.4206 | 1.0000 |
+| COVID-like scoring | 0.4298 | 0.1376 | 0.4298 | 1.0000 |
+| NF-like scoring | 0.4398 | 0.1409 | 0.4398 | 1.0000 |
+| **Touche2020-max**: unigram, `lead_w=0`, `mu_factor=8`, `prior_w=0.35`, `prior_k=12`, `len_prior=0.15` | **0.4987** | **0.1638** | **0.4987** | **1.0000** |
+
+RM3 (`lambda` 0.5–0.95) never beat `lambda=1` (best expansion B ~0.4957 at 0.95). `query_stop=0` was +0.0013 nDCG and −MAP; left off. Live `feedback.py` is this cell. Unlike COVID-max, dropping the lead (not cranking it) transferred to the hidden set.
+
+### Hidden (after submitting Touche2020-max) — 22:50, 26 Sep
+
+Undisclosed live collection (not Touché, not TREC-COVID). Best hidden A/MAP so far among our submits. Rank **1 / 7**, final **0.7700**.
+
+| A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
+|---|---|---|---|---|---|
+| 0.5284 | 0.4489 | 0.5284 | 1.0000 | 0.7700 | 1 / 7 |
