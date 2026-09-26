@@ -8,7 +8,7 @@ The released staff `candidates_dev.jsonl` (50 queries, 100-doc pools, 4408 uniqu
 
 Local TREC-COVID uses that staff pool. Other collections use a BM25-generated pool.
 
-Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**. SciFact-max local **0.6908** **raised** hidden A **0.5149 → 0.5294**.
+Do not treat a local peak as a submit signal by itself. COVID-max local **0.6871** dropped hidden A **0.5250 → 0.4627**. Quora-max local **0.7223** dropped hidden A **0.5265 → 0.4999**. Touche2020-max local **0.4987** **raised** hidden A **0.4999 → 0.5284**. ArguAna-max local **0.4177** dropped hidden A **0.5284 → 0.5149**. SciFact-max local **0.6908** **raised** hidden A **0.5149 → 0.5294**. SciDocs-max local **0.1666** dropped hidden A **0.5294 → 0.5014**.
 
 ---
 
@@ -42,10 +42,11 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **Touche2020-max** | unigram, `lead_w=0`, `mu_factor=8`, `prior_w=0.35`, `prior_k=12`, `len_prior=0.15`, `lambda=1` | **0.5284** | **0.4489** | **0.5284** | **1.0000** | **0.7700** | **1 / 7** | 22:50 |
 | **ArguAna-max** | `query_stop=0`, `mu_min=50`, `mu_factor=0.5`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0`, `prior_w=0.08`, `lambda=1` | **0.5149** | **0.4403** | **0.5149** | **1.0000** | **0.6100** | **2 / 7** | 23:08 |
 | **SciFact-max** | `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=250`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.14`, `lead_len=12`, `lead_mu=60`, `prior_w=0.35`, `prior_k=20`, `lambda=1` | **0.5294** | **0.4526** | **0.5294** | **1.0000** | **0.7700** | **1 / 7** | 23:17 |
+| **SciDocs-max** | `doc_stop=1`, `mu_factor=24`, `mu_max=4000`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0.18`, `lead_len=12`, `lead_mu=30`, `prior_w=0.25`, `prior_k=18`, `lambda=1` | **0.5014** | **0.4169** | **0.5014** | **1.0000** | **0.4550** | **4 / 8** | 23:23 |
 
-Snapshot 23:19 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.5900; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5000; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3800; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3400; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1200.
+Snapshot 23:27 field (raw): Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6417; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.6167; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.5667; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.4083; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3517; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.1100.
 
-FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. SciFact-max (`doc_stop=0`, `query_stop=1`, mild SDM + lead) **retook 1st**: hidden A **0.5149 → 0.5294**, MAP **0.4403 → 0.4526**, B=A, C=1, final **0.6100 → 0.7700**, rank **2 → 1**. That is the best hidden A/MAP of our submits (edges Touche 0.5284 / 0.4489), same percentile final **0.7700**. Bansal’s final fell 0.6400 → 0.5900 from the percentile shift. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627).
+FiQA-max (`lambda=1`) won on B=A and C=1. NFCorpus-max slightly **raised hidden A** (0.5242 → 0.5265) but RM3 **hurt B** (0.5242 → 0.4992) and cut C (1.0 → 0.9712), so percentile final fell 0.6600 → 0.4180. Quora-max restored C=1 and B=A but **overfit the short-doc knobs**: hidden A **0.5265 → 0.4999**, MAP **0.4467 → 0.4210**, final **0.4180 → 0.4880**. Touche2020-max (`lead_w=0`, unigram, `mu_factor=8`) **undid that**: hidden A **0.4999 → 0.5284**, MAP **0.4210 → 0.4489**, B=A, C=1, final **0.4880 → 0.7700**, rank **1 / 7**. Bansal still has higher raw A/MAP (0.5315 / 0.4544) but C 0.9817. ArguAna-max (`query_stop=0`, light mu, SDM) **gave back A**: **0.5284 → 0.5149**, MAP **0.4489 → 0.4403**, final **0.7700 → 0.6100**, rank **1 → 2**. SciFact-max (`doc_stop=0`, `query_stop=1`, mild SDM + lead) **retook 1st**: hidden A **0.5149 → 0.5294**, MAP **0.4403 → 0.4526**, B=A, C=1, final **0.6100 → 0.7700**, rank **2 → 1**. That is the best hidden A/MAP of our submits. SciDocs-max (`doc_stop=1`, `mu_factor=24`) is the COVID-max pattern again: local nDCG is recall-capped at **0.1666**, hidden A **0.5294 → 0.5014**, MAP **0.4526 → 0.4169**, final **0.7700 → 0.4550**, rank **1 → 4 / 8**. C stayed 1. Goel is new (A 0.5274, B 0.5277, C 0.9396 → 0.6167). Bansal 0.6417. This is **not** the same as COVID-max (that used `lead_w=0.60` and `mu_factor=12` and tanked A to 0.4627) but the high-`mu_factor` family is the same risk.
 
 ---
 
@@ -156,7 +157,7 @@ Scientific claims as queries (~12.5 raw words, ~8.4 tokens after query stops). 5
 | Earlier recorded peak (`w_od=0.2`, `lead_w=0.2`, `mu_min=250`) | 0.6898 | — | 0.6898 | 1.0000 |
 | **SciFact-max**: `doc_stop=0`, `query_stop=1`, `mu_factor=1`, `mu_min=250`, `w_od=0.10`, `w_uw=0.15`, `lead_w=0.14`, `lead_len=12`, `lead_mu=60`, `prior_w=0.35`, `prior_k=20` | **0.6908** | **0.6485** | **0.6908** | **1.0000** |
 
-Live `feedback.py` is this cell. **`doc_stop=0` changes indexing vs Touche2020-max / ArguAna-max.**
+Live `feedback.py` was this cell until SciDocs-max. **`doc_stop=0` changes indexing vs Touche2020-max / ArguAna-max.**
 
 ### Hidden (after submitting SciFact-max) — 23:17, 26 Sep
 
@@ -165,6 +166,36 @@ Undisclosed live collection (not SciFact, not TREC-COVID). Best hidden A/MAP of 
 | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
 |---|---|---|---|---|---|
 | 0.5294 | 0.4526 | 0.5294 | 1.0000 | 0.7700 | 1 / 7 |
+
+---
+
+## SciDocs (`beir/scidocs`, `data/scidocs`)
+
+Citation / co-view paper retrieval: title queries (~9.4 raw words, ~7.4 tokens after stops), paper abstracts. 25657 docs, 1000 queries, 4928 positive qrels (~4.9/query). BM25 pool recall@100 **0.3389** — nDCG@10 is recall-capped near ~0.17. With `doc_stop=1`, avgdl ~114.
+
+### Local (BM25 pool), `lambda=1` so B=A and C=1
+
+Two-index descent (`doc_stop=0` vs `1`); `doc_stop=1` won. 500/500 split for the `doc_stop=1` peak: tune **0.1610**, hold **0.1700**. Dense grid + `mu_max` then plateaued.
+
+| PARAMS | A nDCG@10 | A MAP@10 | B nDCG@10 | C |
+|---|---|---|---|---|
+| SciFact-max (`doc_stop=0`) | 0.1576 | 0.0931 | 0.1576 | 1.0000 |
+| Touche-like | 0.1518 | 0.0877 | 0.1518 | 1.0000 |
+| FiQA-like | 0.1617 | 0.0957 | 0.1617 | 1.0000 |
+| NF-like | 0.1616 | 0.0951 | 0.1616 | 1.0000 |
+| `doc_stop=0` scoring max | 0.1633 | 0.0968 | 0.1633 | 1.0000 |
+| `doc_stop=1` descent | 0.1658 | 0.0978 | 0.1658 | 1.0000 |
+| **SciDocs-max**: `doc_stop=1`, `mu_factor=24`, `mu_max=4000`, `w_od=0.35`, `w_uw=0.10`, `lead_w=0.18`, `lead_len=12`, `lead_mu=30`, `prior_w=0.25`, `prior_k=18` | **0.1666** | **0.0982** | **0.1666** | **1.0000** |
+
+RM3 at `lambda=0.7` was B 0.1659 vs A 0.1658 with C 0.9952; left off. Live `feedback.py` is this cell. **High `mu_factor` is the COVID-max family** that already tanked hidden A once (`lead_w=0.60`, `mu_factor=12` → A 0.4627). SciFact-max (hidden 1st, A 0.5294) used `doc_stop=0` and `mu_factor=1`.
+
+### Hidden (after submitting SciDocs-max) — 23:23, 26 Sep
+
+Undisclosed live collection (not SciDocs, not TREC-COVID). Same pattern as COVID-max / Quora-max: local peak, hidden A/MAP fell. C stayed 1. Rank **4 / 8**.
+
+| A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
+|---|---|---|---|---|---|
+| 0.5014 | 0.4169 | 0.5014 | 1.0000 | 0.4550 | 4 / 8 |
 
 ---
 
