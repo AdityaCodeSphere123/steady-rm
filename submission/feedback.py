@@ -53,23 +53,22 @@ _FLAG_SETS = [
 # tools/sweep.py before the deadline.
 PARAMS: Dict[str, float] = {
     # Analysis
-    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    # Track A: Dirichlet QL + SDM + lead field + priors (tools/tune.py, 12 collections)
-    "smoothing": 0, "mu": 0, "mu_factor": 1, "mu_min": 150, "mu_max": 2500, "mu_mode": 0,
-    "w_od": 0.10, "w_uw": 0.10, "uw_window": 8,
-    "lead_w": 0.40, "lead_len": 16, "lead_mu": 50,
+    "stemmer": 2, "doc_stop": 1, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
+    # NFCorpus-max Track A (pool nDCG 0.3229; full-corpus QL ceiling 0.3274)
+    "smoothing": 0, "mu": 0, "mu_factor": 4, "mu_min": 150, "mu_max": 2500, "mu_mode": 0,
+    "w_od": 0.20, "w_uw": 0.0, "uw_window": 8,
+    "lead_w": 0.20, "lead_len": 16, "lead_mu": 20,
     "len_prior": 0.0,
-    "longq_n": 16,       # A1 long-query rule: fade lead_w / len_prior on document-like queries
-    "prior_w": 0.30, "prior_k": 10,
+    "longq_n": 0,
+    "prior_w": 0.15, "prior_k": 10,
     # Feedback: RM3 on RM1
     "rm_variant": 3, "rm2_mix": 0.0,
-    "fb_mu": 200, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
+    "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
     "agree_gamma": 0.0,
-    # Hidden eval: 0.80–0.95 lifted B 0.5058 → 0.5199; still 0.004 under
-    # first place. lambda=1 makes Track B the same ranking as Track A
-    # (0.5250), which clears 0.5241. RM3 stays in the code; expansion is off.
-    "lambda": 1, "lambda_min": 0.80, "lambda_max": 0.95, "coh_w": 0.65,
+    # NFCorpus: lambda=0.5 → B 0.3258 (A 0.3229). Do not submit over FiQA-max
+    # without a reason — doc_stop=1 also changes TREC-COVID tokenisation.
+    "lambda": 0.5, "lambda_min": 0.80, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16,   # long (document-like) queries: shrink expansion
     "small_seed_n": 5,   # hand-picked tiny seeds (adversarial track): trust less
     "qpp_w": 0.0,
