@@ -52,18 +52,19 @@ _FLAG_SETS = [
 # the C++ default. Tuned on a Cranfield proxy -- RETUNE ON THE DEV SET with
 # tools/sweep.py before the deadline.
 PARAMS: Dict[str, float] = {
-    # Analysis (same as NFCorpus/Quora: stemmer 2 + doc/query stops)
-    "stemmer": 2, "doc_stop": 1, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    # Touche2020-max Track A: long debate arguments, short yes/no queries.
-    # Lead field hurts (titles repeat the motion). Unigram + moderate BM25 prior.
-    # RM3 never beat lambda=1 on 49 topics.
-    "smoothing": 0, "mu": 0, "mu_factor": 8, "mu_min": 150, "mu_max": 2500, "mu_mode": 0,
-    "w_od": 0.0, "w_uw": 0.0, "uw_window": 8,
-    "lead_w": 0.0, "lead_len": 16, "lead_mu": 20,
-    "len_prior": 0.15,
-    "longq_n": 0,
-    "prior_w": 0.35, "prior_k": 12,
-    # Feedback: lambda=1 so B=A and C=1 (RM3 dropped B on Touche).
+    # Analysis. query_stop=0 keeps function words on document-length queries
+    # (+~0.005 nDCG on ArguAna). This also changes short-query tokenisation.
+    "stemmer": 2, "doc_stop": 1, "query_stop": 0, "qstop_min_len": 3, "qstop_list": 1,
+    # ArguAna-max Track A: document-as-query, 1 relevant/query, high BM25 recall.
+    # Light Dirichlet (mu_min=50), SDM phrases, no lead, tiny BM25 prior.
+    # RM3 +0.001 B at C<1; keep lambda=1.
+    "smoothing": 0, "mu": 0, "mu_factor": 0.5, "mu_min": 50, "mu_max": 2500, "mu_mode": 0,
+    "w_od": 0.35, "w_uw": 0.10, "uw_window": 8,
+    "lead_w": 0.0, "lead_len": 24, "lead_mu": 10,
+    "len_prior": 0.20,
+    "longq_n": 32,
+    "prior_w": 0.08, "prior_k": 20,
+    # Feedback: lambda=1 so B=A and C=1.
     "rm_variant": 3, "rm2_mix": 0.0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
