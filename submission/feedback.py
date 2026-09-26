@@ -48,16 +48,16 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden interpolant (not SciFact-local). Champ 0.5294 used mu_factor=1,
-# len_prior=0. Touche-max (hidden 0.5284) used mu_factor=8, len_prior=0.15,
-# lead_w=0. This keeps champ lead/SDM/doc_stop and only moves μ + length
-# prior toward Touche. lambda=1. If A falls, revert mu_factor=1 len_prior=0.
+# Hidden nDCG-best so far (mu_factor=3, len_prior=0.08):
+#   A 0.5295  MAP 0.4508  B 0.5295  C 1.0  final 0.7917
+# Beat champ nDCG 0.5294; MAP 0.4526 → 0.4508. Next: mu_factor 3→4 only.
+# If A nDCG falls, revert to 3. Do not touch lead/SDM. lambda=1.
 PARAMS: Dict[str, float] = {
     # Analysis: keep query stops; do not stop documents (hidden A +0.001
     # vs Touche-max which used doc_stop=1).
     "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 3, "qstop_list": 1,
-    # Track A: champ SDM/lead, Touche-ward Dirichlet + length prior
-    "smoothing": 0, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
+    # Track A: proven interpolant + one-step more Dirichlet
+    "smoothing": 0, "mu": 0, "mu_factor": 4, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
     "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
     "lead_w": 0.14, "lead_len": 12, "lead_mu": 60,
     "len_prior": 0.08,
