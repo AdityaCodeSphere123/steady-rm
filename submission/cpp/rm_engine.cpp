@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
     X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -388,6 +388,72 @@ int32_t Engine::doc_index(std::string_view id) const {
     return i == StrTable::NONE ? -1 : docid_to_doc_[i];
 }
 
+static void edits1(const std::string& w, std::vector<std::string>& out) {
+    static const char az[] = "abcdefghijklmnopqrstuvwxyz";
+    const size_t n = w.size();
+    out.clear();
+    out.reserve(n * 54 + 26);
+    for (size_t i = 0; i < n; ++i) {   // deletes
+        std::string e = w; e.erase(i, 1); out.push_back(std::move(e));
+    }
+    for (size_t i = 0; i + 1 < n; ++i) {   // transposes
+        std::string e = w; std::swap(e[i], e[i + 1]); out.push_back(std::move(e));
+    }
+    for (size_t i = 0; i < n; ++i) {   // replaces
+        for (int c = 0; c < 26; ++c) {
+            if (az[c] == w[i]) continue;
+            std::string e = w; e[i] = az[c]; out.push_back(std::move(e));
+        }
+    }
+    for (size_t i = 0; i <= n; ++i) {   // inserts
+        for (int c = 0; c < 26; ++c) {
+            std::string e = w; e.insert(e.begin() + static_cast<std::ptrdiff_t>(i), az[c]);
+            out.push_back(std::move(e));
+        }
+    }
+}
+
+uint32_t Engine::resolve_query_term(const std::string& surface, uint8_t stemmer) const {
+    const std::string& stem = apply_stem(surface, stemmer);
+    uint32_t t = vocab_.find(stem);
+    const bool rare = t != StrTable::NONE && df_[t] <= 2;
+    if (t != StrTable::NONE && !rare) return t;
+    if (P.qspell < 1 || surface.size() < 4) return t;
+    auto best_of = [&](const std::vector<std::string>& cands, uint32_t cur) {
+        uint32_t best = cur;
+        uint64_t best_cf = cur == StrTable::NONE ? 2 : cf_[cur];
+        const uint64_t floor_cf = cur == StrTable::NONE ? 2 : std::max<uint64_t>(cf_[cur] * 8, 8);
+        for (const auto& e : cands) {
+            if (e == surface) continue;
+            const std::string& st = apply_stem(e, stemmer);
+            uint32_t u = vocab_.find(st);
+            if (u == StrTable::NONE || u == cur) continue;
+            if (cf_[u] > best_cf && cf_[u] >= floor_cf) { best = u; best_cf = cf_[u]; }
+        }
+        return best;
+    };
+    std::vector<std::string> e1;
+    edits1(surface, e1);
+    uint32_t best = best_of(e1, t);
+    if ((best == t || best == StrTable::NONE) && P.qspell >= 2 && surface.size() >= 5) {
+        std::vector<std::string> e2, tmp;
+        // Dist-2 is large; only expand deletes + transposes of the surface.
+        e2.reserve(e1.size() * 8);
+        for (size_t i = 0; i < surface.size(); ++i) {
+            std::string d = surface; d.erase(i, 1);
+            edits1(d, tmp);
+            e2.insert(e2.end(), tmp.begin(), tmp.end());
+        }
+        for (size_t i = 0; i + 1 < surface.size(); ++i) {
+            std::string tr = surface; std::swap(tr[i], tr[i + 1]);
+            edits1(tr, tmp);
+            e2.insert(e2.end(), tmp.begin(), tmp.end());
+        }
+        best = best_of(e2, best == StrTable::NONE ? t : best);
+    }
+    return best;
+}
+
 // ---------------------------------------------------------------------------
 // Query analysis
 // ---------------------------------------------------------------------------
@@ -411,8 +477,7 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
     Query q;
     int prev = -1;  // slot of previous in-vocab term; OOV breaks adjacency
     for (auto& s : kept) {
-        const std::string& stem = apply_stem(s, stemmer);
-        uint32_t t = vocab_.find(stem);
+        uint32_t t = resolve_query_term(s, stemmer);
         if (t == StrTable::NONE) { prev = -1; continue; }  // OOV: constant for every doc
         auto it = std::find(q.uniq.begin(), q.uniq.end(), t);
         uint16_t slot;
@@ -421,7 +486,7 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
         ++q.uniq_cnt[slot];
         q.terms.push_back(t);
         q.slot_of_term.push_back(slot);
-        q.strs.push_back(stem);
+        q.strs.push_back(std::string(vocab_.key(t)));
         if (prev >= 0) q.pairs.push_back({static_cast<uint16_t>(prev), slot});
         prev = slot;
         if (q.uniq.size() >= 0xFFF0) break;

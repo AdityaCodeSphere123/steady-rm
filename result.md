@@ -74,6 +74,8 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | two-stage λ=0.08 | Dirichlet then mix P(w|C) | 0.5325 | 0.4526 | 0.5325 | 1.0000 | 0.7283 | — | 18:10 |
 | F2EXP ranker=1 | replace QL unigram; SDM off | 0.5230 | 0.4402 | 0.5230 | 1.0000 | 0.4275 | — | 18:14 |
 | F2EXP fuse ax_w=0.08 | champ Dirichlet + z-F2EXP | 0.5325 | 0.4529 | 0.5325 | 1.0000 | 0.7350 | — | 18:17 |
+| **Antique-max** | F2EXP+BM25 w=1, always-qstop, lead 8/0.22 | **0.5344** | **0.4547** | **0.5344** | **1.0000** | **0.7417** | — | 18:24 |
+| w_od=0.08 | champ + SDM od 0.05→0.08 | 0.5344 | 0.4547 | 0.5344 | 1.0000 | 0.7222 | — | 18:30 |
 | min_len=5 | champ + `qstop_min_len=5` | 0.5324 | 0.4528 | 0.5324 | 1.0000 | 0.8079 | — | 00:40 |
 | lead_len=14 lead_mu=70 | champ + longer/smoother lead field | 0.5314 | 0.4521 | 0.5314 | 1.0000 | 0.7736 | — | 00:46 |
 | pool-RM3 on Track A | 0.5323 cell + `pool_lambda=0.85` `pool_docs=5` | 0.5253 | 0.4438 | 0.5253 | 1.0000 | 0.6164 | — | 00:27 |
@@ -92,7 +94,7 @@ The 0.5323 cell is three stacked pieces, not one lucky knob:
 
 Misses on the way (do not repeat): `lead_w=0.12`, SDM 0.09/0.16, `prior_k=16`, `mu_factor=5`, **Track A pool-RM3** (`pool_lambda=0.85`: local staff COVID +0.023, hidden A **0.5323 → 0.5253**, final **0.8164 → 0.6164**). Local COVID is not hidden.
 
-**nDCG champ is still min_len=4 Porter Dirichlet (`uw_window=8`, 01:12 restore, rank 1, final 0.8164).** Ten diverse hidden families (stemmer, JM, LOO-μ, BM25-primary, unigram, no prior, always-stop, longq, RM3) all landed **0.500–0.5327**. Closest nDCG: `longq_n=6` **0.5325** (MAP **0.4534**, still below champ nDCG). Closest MAP: μ LOO **0.4536** with A **0.5314**. RM3 λ=0.88 left A unchanged and **hurt B** 0.5327→0.5283. A hidden **0.55** is not a nearby PARAMS swap on this engine. Goel is 2nd at A 0.5304 C=1.
+**nDCG champ is Antique-max (18:24): hidden A 0.5344 / MAP 0.4547 / C=1.** Old Dirichlet min_len=4 is 0.5327 / 0.4529. Bansal was 0.5354 / 0.4561. Freeze this zip; one-knob only; restore if A < 0.5344.
 
 Snapshot 23:33 field (raw): Gupta 0.5272 / 0.4501 / 0.5295 / 0.9714 → 0.6143; Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6071; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.5714; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.4571; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3500; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3429; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.0857.
 
@@ -376,4 +378,4 @@ Yahoo Answers / community QA. Short questions, short answers. 403666 docs, avgdl
 | Hidden champ (Dirichlet SDM, min_len=4) | 0.3812 | 0.2007 |
 | **Antique-max**: F2EXP `ranker=1` + `bm25_w=1`, always qstop, `lead_w=0.22` `lead_len=8` `uw_window=12` `prior_w=0.12` `prior_k=7` `len_prior=0.3` `mu_factor=8` `smoothing=2` `mu_mode=1` `w_od=0.05` | **0.3981** | **0.2193** |
 
-Do **not** upload this as the live row. Antique was Assignment 1; collection-max PARAMS already tanked hidden A (COVID 0.6871→0.4627, Quora 0.7223→0.4999). Restore champ zip is `RESTORE-NOW.zip`.
+Hidden submit of this cell (18:24): A **0.5344** MAP **0.4547** B=A C=1 — new champ vs Dirichlet 0.5327/0.4529. Freeze it. `RESTORE-NOW.zip` is this PARAMS.

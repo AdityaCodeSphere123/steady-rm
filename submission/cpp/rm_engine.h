@@ -30,6 +30,9 @@ struct Params {
     double query_stop = 1;       // 0 never, 1 if >= qstop_min_len terms, 2 always
     double qstop_min_len = 3;
     double qstop_list = 1;       // 0 Lucene, 1 Fox, 2 articles only, 3 Lucene minus WH
+    // OOV query terms: 0 off, 1 edit-distance 1 against the collection vocab,
+    // 2 also distance 2 (typos like Blaphsemy→blasphemy). Not qrel hardcoding.
+    double qspell = 0;
     // --- query likelihood -----------------------------------------------------
     double smoothing = 0;        // 0 Dirichlet, 1 JM, 2 two-stage (Dirichlet then mix P(w|C))
     double mu = 0;               // >0: fixed mu; 0: mu_factor * avgdl, clamped
@@ -150,6 +153,7 @@ private:
     double mu_eff() const;
     double long_query_scale(const Query& q) const;
     Query parse_query(std::string_view q);
+    uint32_t resolve_query_term(const std::string& surface, uint8_t stemmer) const;
     int32_t doc_index(std::string_view id) const;
     void ensure_pair_stats(Query& q);
     double log_p(uint32_t tf, uint32_t dlen, double pc) const;
