@@ -63,7 +63,10 @@ struct Params {
     double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5;
     // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
     // 1 = off. Track B lambda stays 1 so C remains 1.
-    double pool_lambda = 1.0, pool_docs = 8;
+    // rm_rounds >= 1: after the first ranking, estimate RM3 from our own top
+    // pool_docs and rescore, repeated rm_rounds times. Mix weight is pool_lambda
+    // (values >= 1 mean 0.5). The file-order pool RM above is skipped.
+    double pool_lambda = 1.0, pool_docs = 8, rm_rounds = 0;
     // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
     // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.

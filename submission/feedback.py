@@ -49,20 +49,20 @@ _FLAG_SETS = [
 ]
 
 # Hidden champ 0.5368 / 0.4563 / B=A / C=1 / final 0.7950. Rank 1.
-# 0.5365 cell plus bm25_delta 0.5 -> 0.25. w_od=0.25, bm25_b=0.4.
-# MAP fell 0.4567 -> 0.4563. Restore champ-0.5368.zip if a later A is below 0.5368.
+# w_od=0.25, bm25_delta=0.25, bm25_b=0.4, bm25_k1=1.2, len_prior=0.3, w_uw=0.15.
+# MAP fell 0.4567 -> 0.4563 when delta moved 0.5 -> 0.25.
 # Old Dirichlet 0.5327: ranker=0 bm25_w=0 smoothing=0 mu_mode=0 mu_factor=3
 # len_prior=0.08 lead_w=0.14 lead_len=12 w_od=0.1 w_uw=0.15 uw_window=8
 # prior_w=0.35 prior_k=20 query_stop=1 qstop_min_len=4.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 0, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
-    "w_od": 0.25, "w_uw": 0.15, "uw_window": 12,
+    "w_od": 0.25, "w_uw": 0.15, "uw_window": 8,
     "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
     "prior_w": 0.12, "prior_k": 7,
     "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
-    "pool_lambda": 1.0, "pool_docs": 8,
+    "pool_lambda": 1.0, "pool_docs": 8, "rm_rounds": 0,
     "ranker": 1, "ax_b": 0.5, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
