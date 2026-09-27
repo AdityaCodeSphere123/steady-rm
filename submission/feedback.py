@@ -48,9 +48,9 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Trial on the 0.5365 champ: bm25_delta 0.5 -> 0.25. bm25_b stays 0.4, w_od stays 0.25.
-# SciDocs local nDCG 0.1617 -> 0.1623, MAP 0.0958 -> 0.0962.
-# Restore champ-0.5365.zip if hidden A falls below 0.5365.
+# Hidden champ 0.5368 / 0.4563 / B=A / C=1 / final 0.7950. Rank 1.
+# 0.5365 cell plus bm25_delta 0.5 -> 0.25. w_od=0.25, bm25_b=0.4.
+# MAP fell 0.4567 -> 0.4563. Restore champ-0.5368.zip if a later A is below 0.5368.
 # Old Dirichlet 0.5327: ranker=0 bm25_w=0 smoothing=0 mu_mode=0 mu_factor=3
 # len_prior=0.08 lead_w=0.14 lead_len=12 w_od=0.1 w_uw=0.15 uw_window=8
 # prior_w=0.35 prior_k=20 query_stop=1 qstop_min_len=4.

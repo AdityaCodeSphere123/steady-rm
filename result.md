@@ -77,7 +77,9 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **Antique-max** | F2EXP+BM25 w=1, always-qstop, lead 8/0.22 | **0.5344** | **0.4547** | **0.5344** | **1.0000** | **0.7417** | — | 18:24 |
 | w_od=0.08 | champ + SDM od 0.05→0.08 | 0.5344 | 0.4547 | 0.5344 | 1.0000 | 0.7222 | — | 18:30 |
 | Antique coordinate search | `smoothing=0` `mu=250` `mu_mode=0` `bm25_k1=1.6` `pool_lambda=0.7` `pool_docs=4` `qspell=2` | 0.5117 | 0.4270 | 0.5117 | 1.0000 | 0.4040 | — | 19:00 |
-| **w_od=0.25 champ** | 0.5344 cell, `w_od` 0.05→0.25 | **0.5365** | **0.4567** | **0.5365** | **1.0000** | **0.7950** | **1 / 12** | 19:06 |
+| **w_od=0.25** | 0.5344 cell, `w_od` 0.05→0.25 | **0.5365** | **0.4567** | **0.5365** | **1.0000** | **0.7950** | **1 / 12** | 19:06 |
+| bm25_b=0.65 | 0.5365 cell, `bm25_b` 0.4→0.65 | 0.5365 | 0.4565 | 0.5365 | 1.0000 | 0.7950 | 1 | 19:16 |
+| **bm25_delta=0.25 champ** | 0.5365 cell, `bm25_delta` 0.5→0.25 | **0.5368** | **0.4563** | **0.5368** | **1.0000** | **0.7950** | **1** | 19:20 |
 | min_len=5 | champ + `qstop_min_len=5` | 0.5324 | 0.4528 | 0.5324 | 1.0000 | 0.8079 | — | 00:40 |
 | lead_len=14 lead_mu=70 | champ + longer/smoother lead field | 0.5314 | 0.4521 | 0.5314 | 1.0000 | 0.7736 | — | 00:46 |
 | pool-RM3 on Track A | 0.5323 cell + `pool_lambda=0.85` `pool_docs=5` | 0.5253 | 0.4438 | 0.5253 | 1.0000 | 0.6164 | — | 00:27 |
@@ -96,7 +98,7 @@ The 0.5323 cell is three stacked pieces, not one lucky knob:
 
 Misses on the way (do not repeat): `lead_w=0.12`, SDM 0.09/0.16, `prior_k=16`, `mu_factor=5`, **Track A pool-RM3** (`pool_lambda=0.85`: local staff COVID +0.023, hidden A **0.5323 → 0.5253**, final **0.8164 → 0.6164**). Local COVID is not hidden.
 
-**nDCG champ is `w_od=0.25` on the Antique-max cell (19:06): hidden A 0.5365 / MAP 0.4567 / B=A / C=1 / final 0.7950, rank 1 / 12.** Bansal 0.5354 / 0.4561 / 0.5354 / 1 / final 0.7400. Previous champ was Antique-max 0.5344 / 0.4547. Freeze `champ-0.5365.zip`; one-knob only; restore if A < 0.5365.
+**nDCG champ is `bm25_delta=0.25` on the w_od=0.25 cell (19:20): hidden A 0.5368 / MAP 0.4563 / B=A / C=1 / final 0.7950.** Previous was 0.5365 / 0.4567. MAP dropped 0.0004; nDCG rose 0.0003. Freeze `champ-0.5368.zip`; one-knob only; restore if A < 0.5368.
 
 ```
 stemmer=2 doc_stop=0 query_stop=2 qstop_min_len=0 qstop_list=0
@@ -104,13 +106,13 @@ smoothing=2 jm_lambda=0.5 mu=0 mu_factor=8 mu_min=250 mu_max=2500 mu_mode=1 mu_l
 w_od=0.25 w_uw=0.15 uw_window=12
 lead_w=0.22 lead_len=8 lead_mu=60 len_prior=0.3 longq_n=0
 prior_w=0.12 prior_k=7
-bm25_w=1 bm25_k1=1.2 bm25_b=0.4 bm25_delta=0.5
+bm25_w=1 bm25_k1=1.2 bm25_b=0.4 bm25_delta=0.25
 pool_lambda=1 pool_docs=8
 ranker=1 ax_b=0.5 ax_k=0.35 ax_c=1 ax_w=0 qspell=0
 lambda=1
 ```
 
-SciDocs local for this cell: nDCG **0.1617** / MAP **0.0958** (0.5344 cell on SciDocs was 0.1588 / 0.0937). `mu_factor` does not move `ranker=1`. The full SciDocs-max package stays a miss (hidden A 0.5014).
+`bm25_b=0.65` tied A at 0.5365 and dropped MAP to 0.4565; reverted before this step. SciDocs local for `bm25_delta=0.25`: nDCG **0.1623** / MAP **0.0962** (w_od=0.25 cell was 0.1617 / 0.0958).
 
 Snapshot 23:33 field (raw): Gupta 0.5272 / 0.4501 / 0.5295 / 0.9714 → 0.6143; Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6071; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.5714; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.4571; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3500; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3429; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.0857.
 
