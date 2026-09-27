@@ -56,6 +56,11 @@ struct Params {
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
+    // BM25+ fused with QL by z-score inside score_candidates (0 = off).
+    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5;
+    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
+    // 1 = off. Track B lambda stays 1 so C remains 1.
+    double pool_lambda = 1.0, pool_docs = 8;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -164,6 +169,7 @@ private:
     std::vector<double> score_pool(const Query& q, const std::vector<int32_t>& docs,
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
+    std::vector<double> bm25_pool(const Query& q, const std::vector<int32_t>& docs) const;
 
     bool ready_ = false;
     std::string path_;

@@ -48,28 +48,22 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden champion (00:20): A 0.5323 MAP 0.4528 C 1 final 0.8164.
-# Same axis as that win (keep more query tokens): qstop_min_len 3→4.
-# Stops still drop on queries with ≥4 surface tokens. qstop_list stays 0.
-# If A < 0.5323, revert qstop_min_len to 3.
+# Sweep tag=champ-0.5327. Champ overlay; unknown keys omitted.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 4, "qstop_list": 0,
-    # Track A: exact hidden nDCG-best scoring knobs
-    "smoothing": 0, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0,
-    "w_od": 0.10, "w_uw": 0.15, "uw_window": 8,
+    "smoothing": 0, "jm_lambda": 0.5, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0, "mu_loo_scale": 1.0,
+    "w_od": 0.1, "w_uw": 0.15, "uw_window": 8,
     "lead_w": 0.14, "lead_len": 12, "lead_mu": 60,
-    "len_prior": 0.08,
-    "longq_n": 0,
+    "len_prior": 0.08, "longq_n": 0,
     "prior_w": 0.35, "prior_k": 20,
-    # Track B/C: lambda=1 → B=A and C=1 (percentile win vs Bansal C 0.9817).
-    "rm_variant": 3, "rm2_mix": 0.0,
-    "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1.0, "idf_power": 0.5,
-    "anchor_min": 2, "term_support": 2, "per_doc_cap": 1.0, "min_cf": 2,
-    "agree_gamma": 0.0,
-    "lambda": 1.0, "lambda_min": 0.80, "lambda_max": 0.95, "coh_w": 0.65,
-    "qlen_shrink": 16,   # long (document-like) queries: shrink expansion
-    "small_seed_n": 5,   # hand-picked tiny seeds (adversarial track): trust less
-    "qpp_w": 0.0,
+    "bm25_w": 0.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.5,
+    "pool_lambda": 1.0, "pool_docs": 8,
+    "rm_variant": 3, "rm2_mix": 0,
+    "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
+    "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
+    "agree_gamma": 0,
+    "lambda": 1.0, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
 }
 

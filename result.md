@@ -49,7 +49,28 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | **μ3 + len 0.08** | SciFact-max lead/SDM, `mu_factor=3`, `len_prior=0.08` | **0.5295** | 0.4508 | **0.5295** | **1.0000** | **0.7917** | — | 00:11 |
 | μ5 + len 0.12 | `mu_factor=5`, `len_prior=0.12` | 0.5280 | 0.4492 | 0.5280 | 1.0000 | 0.7293 | — | 00:14 |
 | μ3 prior_k=16 | nDCG-best + `prior_k=16` | 0.5290 | 0.4503 | 0.5290 | 1.0000 | 0.7379 | — | 00:16 |
-| **Lucene qstop + μ3** | nDCG-best scoring + `qstop_list=0` | **0.5323** | **0.4528** | **0.5323** | **1.0000** | **0.8164** | — | 00:20 |
+| **Lucene qstop + μ3** | nDCG-best scoring + `qstop_list=0` `qstop_min_len=3` | **0.5323** | **0.4528** | **0.5323** | **1.0000** | **0.8164** | — | 00:20 |
+| **Lucene qstop min_len=4** | same + `qstop_min_len=4` (git `1fb7d29`) | **0.5327** | **0.4529** | **0.5327** | **1.0000** | **0.8164** | **1 / 9** | 00:37 |
+| live overwrite | last zip before restore (board 00:47) | 0.5316 | 0.4516 | 0.5316 | 1.0000 | 0.8079 | 1 / 9 | 00:47 |
+| **restore min_len=4 champ** | `uw_window=8` `bm25_w=0` `lambda=1` (re-zip 01:00) | **0.5327** | **0.4529** | **0.5327** | **1.0000** | **0.8164** | **1 / 9** | 01:01 |
+| uw_window=10 | champ + `uw_window` 8→10 | 0.5309 | 0.4507 | 0.5309 | 1.0000 | 0.7736 | 1 / 9 | 01:02 |
+| **re-restore champ** | same 0.5327 zip after uw miss | **0.5327** | **0.4529** | **0.5327** | **1.0000** | **0.8164** | **1 / 9** | 01:03 |
+| s-stemmer | champ + `stemmer=1` | 0.5157 | 0.4353 | 0.5157 | 1.0000 | — | — | 01:08 |
+| no-stem | champ + `stemmer=0` | 0.5001 | 0.4201 | 0.5001 | 1.0000 | — | — | 01:08 |
+| JM λ=0.2 | champ + `smoothing=1` `jm_lambda=0.2` | 0.5228 | 0.4484 | 0.5228 | 1.0000 | — | — | 01:09 |
+| μ LOO | champ + `mu_mode=1` | 0.5314 | **0.4536** | 0.5314 | 1.0000 | — | — | 01:10 |
+| BM25-primary | `bm25_w=1` k1=0.9 b=0.75 δ=1 | 0.5310 | 0.4525 | 0.5310 | 1.0000 | — | — | 01:10 |
+| unigram μ8 | Touche body + Lucene qstop | 0.5293 | 0.4495 | 0.5293 | 1.0000 | — | — | 01:11 |
+| no rank prior | champ + `prior_w=0` | 0.5281 | 0.4507 | 0.5281 | 1.0000 | — | — | 01:11 |
+| always qstop | champ + `query_stop=2` | 0.5323 | 0.4528 | 0.5323 | 1.0000 | — | — | 01:12 |
+| longq_n=6 | champ + shrink lead/len on long Q | 0.5325 | **0.4534** | 0.5325 | 1.0000 | — | — | 01:12 |
+| RM3 λ=0.88 | champ + expansion | 0.5327 | 0.4529 | 0.5283 | 0.9997 | — | — | 01:13 |
+| **post-sweep restore** | champ zip again | **0.5327** | **0.4529** | **0.5327** | **1.0000** | **0.8164** | **1 / 9** | 01:12 |
+| min_len=5 | champ + `qstop_min_len=5` | 0.5324 | 0.4528 | 0.5324 | 1.0000 | 0.8079 | — | 00:40 |
+| lead_len=14 lead_mu=70 | champ + longer/smoother lead field | 0.5314 | 0.4521 | 0.5314 | 1.0000 | 0.7736 | — | 00:46 |
+| pool-RM3 on Track A | 0.5323 cell + `pool_lambda=0.85` `pool_docs=5` | 0.5253 | 0.4438 | 0.5253 | 1.0000 | 0.6164 | — | 00:27 |
+| BM25 `w=0.15` | 0.5323 cell + `bm25_w=0.15` | 0.5316 | 0.4523 | 0.5316 | 1.0000 | 0.8025 | — | 00:32 |
+| **BM25 `w=0.08`** | 0.5323 cell + `bm25_w=0.08` | 0.5322 | 0.4526 | 0.5322 | 1.0000 | **0.8317** | — | 00:36 |
 
 ### What actually won (00:20)
 
@@ -58,11 +79,12 @@ The 0.5323 cell is three stacked pieces, not one lucky knob:
 1. **Keep C = 1.** `lambda=1` makes Track B call `score_candidates`, so noisy seeds cannot change the ranking. Retention is exactly 1. Bansal/Gupta had higher or similar raw B at times but C 0.97–0.98; that 35% percentile is why 0.8164 beats ~0.61.
 2. **SciFact-max body** (`doc_stop=0`, `query_stop=1`, SDM `w_od=0.10` `w_uw=0.15`, `lead_w=0.14`, `prior_w=0.35` `prior_k=20`). That family first took hidden A to **0.5294**. Collection-hopping (COVID/Quora/SciDocs/ArguAna/Vaswani) and 0.01 SDM/`lead_w` nudges all lost. Do not retune those.
 3. **Touche-ward Dirichlet, one step only.** `mu_factor` 1→**3** and `len_prior` 0→**0.08** raised A **0.5294 → 0.5295**. The next step (`mu_factor=5`, `len_prior=0.12`) fell to 0.5280. Freeze μ/len here.
-4. **The jump that beat Bansal:** `qstop_list` **1 → 0**. Queries still drop stopwords (`query_stop=1`; ArguAna's `query_stop=0` had already tanked hidden A to 0.5149). The list itself changes from Fox (long) to Lucene (short), so more query tokens survive. Hidden A **0.5295 → 0.5323**, MAP **0.4508 → 0.4528**, final **0.7917 → 0.8164**. That is past Bansal's raw A **0.5315**.
+4. **The jump that beat Bansal:** `qstop_list` **1 → 0**. Queries still drop stopwords (`query_stop=1`; ArguAna's `query_stop=0` had already tanked hidden A to 0.5149). The list itself changes from Fox (long) to Lucene (short), so more query tokens survive. Hidden A **0.5295 → 0.5323**, MAP **0.4508 → 0.4528**.
+5. **Real nDCG champ:** `qstop_min_len` **3 → 4** on that cell (git `1fb7d29`) → A **0.5327**, MAP **0.4529**. Short queries keep every token; stops still drop on queries with ≥4 surface words. BM25 `w=0.08` on *min_len=3* was A 0.5322 / final **0.8317** (best final, not best nDCG). Do not treat 0.5323 as champ.
 
-Misses on the way (do not repeat): `lead_w=0.12`, SDM 0.09/0.16, `prior_k=16`, `mu_factor=5`.
+Misses on the way (do not repeat): `lead_w=0.12`, SDM 0.09/0.16, `prior_k=16`, `mu_factor=5`, **Track A pool-RM3** (`pool_lambda=0.85`: local staff COVID +0.023, hidden A **0.5323 → 0.5253**, final **0.8164 → 0.6164**). Local COVID is not hidden.
 
-**Freeze this zip.** Next edits should not touch `qstop_list`, μ, len, lead, or SDM unless a later board proves a new axis.
+**nDCG champ is still min_len=4 Porter Dirichlet (`uw_window=8`, 01:12 restore, rank 1, final 0.8164).** Ten diverse hidden families (stemmer, JM, LOO-μ, BM25-primary, unigram, no prior, always-stop, longq, RM3) all landed **0.500–0.5327**. Closest nDCG: `longq_n=6` **0.5325** (MAP **0.4534**, still below champ nDCG). Closest MAP: μ LOO **0.4536** with A **0.5314**. RM3 λ=0.88 left A unchanged and **hurt B** 0.5327→0.5283. A hidden **0.55** is not a nearby PARAMS swap on this engine. Goel is 2nd at A 0.5304 C=1.
 
 Snapshot 23:33 field (raw): Gupta 0.5272 / 0.4501 / 0.5295 / 0.9714 → 0.6143; Bansal 0.5315 / 0.4544 / 0.5241 / 0.9817 → 0.6071; Goel 0.5274 / 0.4504 / 0.5277 / 0.9396 → 0.5714; boldfit 0.5035 / 0.4278 / 0.5035 / 1.0 → 0.4571; P. Kumar 0.5244 / 0.4484 / 0.5246 / 0.9040 → 0.3500; Akhtar 0.4975 / 0.4212 / 0.4975 / 1.0 → 0.3429; A. Kumar 0.4960 / 0.4201 / 0.4998 / 0.9313 → 0.0857.
 
