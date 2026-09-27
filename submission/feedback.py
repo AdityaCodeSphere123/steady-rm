@@ -48,16 +48,20 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Sweep tag=champ-0.5327. Champ overlay; unknown keys omitted.
+# Antique-max local fit (nDCG 0.3981 / MAP 0.2193 on data/antique).
+# Hidden champ restore: ranker=0 ax_w=0 bm25_w=0 smoothing=0 mu_mode=0
+# mu_factor=3 len_prior=0.08 lead_w=0.14 lead_len=12 w_od=0.1 w_uw=0.15
+# uw_window=8 prior_w=0.35 prior_k=20 query_stop=1 qstop_min_len=4.
 PARAMS: Dict[str, float] = {
-    "stemmer": 2, "doc_stop": 0, "query_stop": 1, "qstop_min_len": 4, "qstop_list": 0,
-    "smoothing": 0, "jm_lambda": 0.5, "mu": 0, "mu_factor": 3, "mu_min": 250, "mu_max": 2500, "mu_mode": 0, "mu_loo_scale": 1.0,
-    "w_od": 0.1, "w_uw": 0.15, "uw_window": 8,
-    "lead_w": 0.14, "lead_len": 12, "lead_mu": 60,
-    "len_prior": 0.08, "longq_n": 0,
-    "prior_w": 0.35, "prior_k": 20,
-    "bm25_w": 0.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.5,
+    "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
+    "smoothing": 2, "jm_lambda": 0.5, "mu": 0, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
+    "w_od": 0.05, "w_uw": 0.15, "uw_window": 12,
+    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
+    "len_prior": 0.3, "longq_n": 0,
+    "prior_w": 0.12, "prior_k": 7,
+    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.5,
     "pool_lambda": 1.0, "pool_docs": 8,
+    "ranker": 1, "ax_b": 0.5, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,

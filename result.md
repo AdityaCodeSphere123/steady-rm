@@ -66,6 +66,14 @@ Same hidden topics every submit. Percentile final score, not raw average. Not TR
 | longq_n=6 | champ + shrink lead/len on long Q | 0.5325 | **0.4534** | 0.5325 | 1.0000 | — | — | 01:12 |
 | RM3 λ=0.88 | champ + expansion | 0.5327 | 0.4529 | 0.5283 | 0.9997 | — | — | 01:13 |
 | **post-sweep restore** | champ zip again | **0.5327** | **0.4529** | **0.5327** | **1.0000** | **0.8164** | **1 / 9** | 01:12 |
+| mini-qstop (list=2) | articles/preps only | 0.5308 | 0.4518 | 0.5308 | 1.0000 | 0.7455 | 2 / 12 | 17:53 |
+| lucene-no-wh (list=3) | Lucene minus WH-words | 0.5325 | 0.4527 | 0.5325 | 1.0000 | 0.7455 | — | 18:00 |
+| BM25 w=0.08 on champ | min_len=4 + `bm25_w=0.08` | 0.5326 | 0.4527 | 0.5326 | 1.0000 | 0.7455 | — | 18:01 |
+| mu_factor=4 | champ + `mu_factor` 3→4 | 0.5315 | 0.4516 | 0.5315 | 1.0000 | 0.7455 | — | 18:04 |
+| mu_factor=2 | champ + `mu_factor` 3→2 | 0.5319 | **0.4536** | 0.5319 | 1.0000 | 0.7417 | — | 18:06 |
+| two-stage λ=0.08 | Dirichlet then mix P(w|C) | 0.5325 | 0.4526 | 0.5325 | 1.0000 | 0.7283 | — | 18:10 |
+| F2EXP ranker=1 | replace QL unigram; SDM off | 0.5230 | 0.4402 | 0.5230 | 1.0000 | 0.4275 | — | 18:14 |
+| F2EXP fuse ax_w=0.08 | champ Dirichlet + z-F2EXP | 0.5325 | 0.4529 | 0.5325 | 1.0000 | 0.7350 | — | 18:17 |
 | min_len=5 | champ + `qstop_min_len=5` | 0.5324 | 0.4528 | 0.5324 | 1.0000 | 0.8079 | — | 00:40 |
 | lead_len=14 lead_mu=70 | champ + longer/smoother lead field | 0.5314 | 0.4521 | 0.5314 | 1.0000 | 0.7736 | — | 00:46 |
 | pool-RM3 on Track A | 0.5323 cell + `pool_lambda=0.85` `pool_docs=5` | 0.5253 | 0.4438 | 0.5253 | 1.0000 | 0.6164 | — | 00:27 |
@@ -356,3 +364,16 @@ Undisclosed live collection (not ArguAna, not TREC-COVID). `query_stop=0` + ligh
 | A nDCG@10 | A MAP@10 | B nDCG@10 | C retention | final | rank |
 |---|---|---|---|---|---|
 | 0.5149 | 0.4403 | 0.5149 | 1.0000 | 0.6100 | 2 / 7 |
+
+---
+
+## Antique (`ir_datasets` / `data/antique`)
+
+Yahoo Answers / community QA. Short questions, short answers. 403666 docs, avgdl **38.4**, 200 queries, BM25 pool. Champ hidden zip on this collection: A **0.3812** / MAP **0.2007**. Coordinate ascent + BM25/F2EXP fine grid (λ=1):
+
+| PARAMS | A nDCG@10 | A MAP@10 |
+|---|---|---|
+| Hidden champ (Dirichlet SDM, min_len=4) | 0.3812 | 0.2007 |
+| **Antique-max**: F2EXP `ranker=1` + `bm25_w=1`, always qstop, `lead_w=0.22` `lead_len=8` `uw_window=12` `prior_w=0.12` `prior_k=7` `len_prior=0.3` `mu_factor=8` `smoothing=2` `mu_mode=1` `w_od=0.05` | **0.3981** | **0.2193** |
+
+Do **not** upload this as the live row. Antique was Assignment 1; collection-max PARAMS already tanked hidden A (COVID 0.6871→0.4627, Quora 0.7223→0.4999). Restore champ zip is `RESTORE-NOW.zip`.

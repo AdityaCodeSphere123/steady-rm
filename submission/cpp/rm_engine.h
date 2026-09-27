@@ -29,12 +29,12 @@ struct Params {
     // --- query analysis -----------------------------------------------------
     double query_stop = 1;       // 0 never, 1 if >= qstop_min_len terms, 2 always
     double qstop_min_len = 3;
-    double qstop_list = 1;       // 0 short (Lucene) list, 1 long (Fox) list
+    double qstop_list = 1;       // 0 Lucene, 1 Fox, 2 articles only, 3 Lucene minus WH
     // --- query likelihood -----------------------------------------------------
-    double smoothing = 0;        // 0 Dirichlet, 1 Jelinek-Mercer
+    double smoothing = 0;        // 0 Dirichlet, 1 JM, 2 two-stage (Dirichlet then mix P(w|C))
     double mu = 0;               // >0: fixed mu; 0: mu_factor * avgdl, clamped
     double mu_factor = 12, mu_min = 250, mu_max = 2500;
-    double jm_lambda = 0.5;      // JM weight on P(w|C)
+    double jm_lambda = 0.5;      // JM / two-stage weight on P(w|C)
     // mu_mode 1: mu = mu_loo_scale * (leave-one-out ML estimate of mu on the
     // collection itself; Zhai & Lafferty 2002, two-stage smoothing). Needs no
     // relevance judgments, so it adapts to an unseen collection. [prep]
@@ -61,6 +61,10 @@ struct Params {
     // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
     // 1 = off. Track B lambda stays 1 so C remains 1.
     double pool_lambda = 1.0, pool_docs = 8;
+    // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
+    double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
+    // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
+    double ax_w = 0.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -170,6 +174,7 @@ private:
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
     std::vector<double> bm25_pool(const Query& q, const std::vector<int32_t>& docs) const;
+    std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
 
     bool ready_ = false;
     std::string path_;

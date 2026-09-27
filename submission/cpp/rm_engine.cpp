@@ -28,7 +28,8 @@ namespace rm {
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
-    X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(pool_lambda) X(pool_docs)
+    X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(pool_lambda) X(pool_docs) \
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -394,7 +395,10 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
     std::vector<std::string> surf;
     each_surface(qtext, [&](std::string_view s) { surf.emplace_back(s); });
-    const auto& stops = P.qstop_list > 0 ? STOPWORDS : INDEX_STOPWORDS;
+    const auto& stops = P.qstop_list >= 3 ? LUCENE_MINUS_WH
+                       : P.qstop_list >= 2 ? MINIMAL_STOPWORDS
+                       : P.qstop_list > 0 ? STOPWORDS
+                       : INDEX_STOPWORDS;
     bool drop = P.query_stop >= 2 || (P.query_stop >= 1 && surf.size() >= P.qstop_min_len);
     std::vector<std::string> kept;
     if (drop) for (auto& s : surf) if (!stops.count(s)) kept.push_back(s);
@@ -567,13 +571,19 @@ double Engine::long_query_scale(const Query& q) const {
 }
 
 double Engine::log_p(uint32_t tf, uint32_t dlen, double pc) const {
+    const double mu = mu_eff();
+    const double dir = (static_cast<double>(tf) + mu * pc) / (static_cast<double>(dlen) + mu);
+    if (P.smoothing >= 2) {
+        // Two-stage: (1-λ) Dirichlet + λ P(w|C). Not the same as JM (smoothing=1).
+        const double l = std::min(0.95, std::max(0.0, P.jm_lambda));
+        return std::log(std::max(1e-18, (1.0 - l) * dir + l * pc));
+    }
     if (P.smoothing >= 1) {
         const double l = P.jm_lambda;
         double ml = dlen ? static_cast<double>(tf) / dlen : 0.0;
         return std::log((1 - l) * ml + l * pc);
     }
-    const double mu = mu_eff();
-    return std::log((tf + mu * pc) / (dlen + mu));
+    return std::log(dir);
 }
 
 Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) const {
@@ -599,12 +609,34 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     const double T = static_cast<double>(total_);
     const double lw = P.lead_w * long_query_scale(q);
     const double ll = std::min<double>(dlen, lead_len), lmu = P.lead_mu;
+    if (P.ranker >= 1) {
+        // F2EXP: tfn = tf log(1 + c avgdl/|D|), then tfn/(tfn+b) * ((N+1)/df)^k
+        const double N = std::max(1.0, static_cast<double>(n_docs()));
+        const double avg = avgdl_ > 0 ? avgdl_ : 1.0;
+        const double b = P.ax_b > 0 ? P.ax_b : 0.5;
+        const double k = P.ax_k > 0 ? P.ax_k : 0.35;
+        const double c = P.ax_c > 0 ? P.ax_c : 1.0;
+        auto f2 = [&](uint32_t tfn_raw, double dl, uint32_t tid) {
+            const double df = std::max(1.0, static_cast<double>(df_[tid]));
+            const double tfn = static_cast<double>(tfn_raw) * std::log(1.0 + c * avg / std::max(1.0, dl));
+            const double idf = std::pow((N + 1.0) / df, k);
+            return (tfn / (tfn + b)) * idf;
+        };
+        for (size_t u = 0; u < U; ++u) {
+            const uint32_t tid = q.uniq[u];
+            double s = f2(tf[u], dlen, tid);
+            if (lw > 0) s = (1.0 - lw) * s + lw * f2(tfl[u], std::max(1.0, ll), tid);
+            f.uni += q.uniq_cnt[u] * s;
+            if (tf[u]) f.matched += q.uniq_cnt[u];
+        }
+    } else {
     for (size_t u = 0; u < U; ++u) {
         const double pc = cf_[q.uniq[u]] / T;
         double lp = log_p(tf[u], dlen, pc);
         if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (tfl[u] + lmu * pc) / (ll + lmu));
         f.uni += q.uniq_cnt[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
+    }
     }
     if (!q.pairs.empty() && (P.w_od > 0 || P.w_uw > 0)) {
         const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
@@ -637,7 +669,7 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     const size_t n = docs.size();
     std::vector<double> out(n, 0.0);
     const double T = static_cast<double>(total_), mu = mu_eff();
-    const bool jm = P.smoothing >= 1;
+    const bool jm = P.smoothing >= 1 && P.smoothing < 2;
     std::vector<double>& mw = mw_;       // dense model weights, all zero between calls
     double msum = 0, base_const = 0;
     if (model) {
@@ -725,6 +757,48 @@ std::vector<double> Engine::bm25_pool(const Query& q, const std::vector<int32_t>
     return out;
 }
 
+std::vector<double> Engine::f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const {
+    const size_t n = docs.size(), U = q.uniq.size();
+    std::vector<double> out(n, 0.0);
+    if (!U) return out;
+    const double N = std::max(1.0, static_cast<double>(n_docs()));
+    const double avg = avgdl_ > 0 ? avgdl_ : 1.0;
+    const double b = P.ax_b > 0 ? P.ax_b : 0.5;
+    const double k = P.ax_k > 0 ? P.ax_k : 0.35;
+    const double c = P.ax_c > 0 ? P.ax_c : 1.0;
+    const double lead_len = std::max(1.0, P.lead_len);
+    const double lw = P.lead_w * long_query_scale(q);
+    auto f2 = [&](double tfn_raw, double dl, size_t u) {
+        const double df = std::max(1.0, static_cast<double>(df_[q.uniq[u]]));
+        const double tfn = tfn_raw * std::log(1.0 + c * avg / std::max(1.0, dl));
+        return (tfn / (tfn + b)) * std::pow((N + 1.0) / df, k);
+    };
+    std::vector<uint32_t> tf(U, 0), tfl(U, 0);
+    for (size_t i = 0; i < n; ++i) {
+        const int32_t d = docs[i];
+        if (d < 0) continue;
+        const uint32_t* t = toks_.data() + tok_off_[d];
+        const uint32_t dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+        std::fill(tf.begin(), tf.end(), 0);
+        std::fill(tfl.begin(), tfl.end(), 0);
+        for (uint32_t p = 0; p < dlen; ++p) {
+            const uint16_t u = qmark_[t[p]];
+            if (u == 0xFFFF) continue;
+            ++tf[u];
+            if (p < lead_len) ++tfl[u];
+        }
+        const double ll = std::min<double>(dlen, lead_len);
+        double s = 0;
+        for (size_t u = 0; u < U; ++u) {
+            double v = f2(static_cast<double>(tf[u]), dlen, u);
+            if (lw > 0) v = (1.0 - lw) * v + lw * f2(static_cast<double>(tfl[u]), std::max(1.0, ll), u);
+            s += q.uniq_cnt[u] * v;
+        }
+        out[i] = s;
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Ranking helpers
 // ---------------------------------------------------------------------------
@@ -788,11 +862,18 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
                 s = score_pool(q, docs, &model, P.pool_lambda, true);
         }
     }
-    if (P.bm25_w > 0 && docs.size() > 1) {
-        auto bm = bm25_pool(q, docs);
+    if ((P.bm25_w > 0 || P.ax_w > 0) && docs.size() > 1) {
         zscore(s);
-        zscore(bm);
-        for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            zscore(bm);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            zscore(ax);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+        }
     }
     return fuse_rank(s, cands, P.prior_w, k);
 }
