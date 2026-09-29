@@ -1,8 +1,6 @@
 #include "analysis.h"
-#include <cctype>
 #include <cstdint>
 #include <cstring>
-#include <string_view>
 
 // Aggressive Fox-style list: used only when pruning the RM3 forward index
 // on large collections (N ≥ 20k). Indexing uses INDEX_STOPWORDS instead.
@@ -326,22 +324,7 @@ static inline std::string s_stem(const std::string& word) {
 }
 
 thread_local PorterStemmer g_porter;
-// One cache per stemmer mode (A2 change: the stemmer can now differ between
-// prepare() calls in one process, so the cache must be keyed by mode).
 thread_local std::unordered_map<std::string, std::string> g_stem_cache[3];
-
-uint8_t g_tok_alnum[256];
-uint8_t g_tok_lower[256];
-const bool g_tok_inited = []() {
-    for (int i = 0; i < 256; ++i) {
-        unsigned char c = static_cast<unsigned char>(i);
-        if (std::isalnum(c)) {
-            g_tok_alnum[i] = 1;
-            g_tok_lower[i] = static_cast<uint8_t>(std::tolower(c));
-        }
-    }
-    return true;
-}();
 
 const std::string& apply_stem(const std::string& w, uint8_t stemmer) {
     auto& cache = g_stem_cache[stemmer > 2 ? 2 : stemmer];
@@ -352,76 +335,4 @@ const std::string& apply_stem(const std::string& w, uint8_t stemmer) {
     else if (stemmer == 1) s = s_stem(w);
     else s = g_porter.stem(w);
     return cache.emplace(w, std::move(s)).first->second;
-}
-
-// Dotted initials: "U.S." / "F.B.I." are otherwise three length-1 tokens and
-// vanish. Glue single letters separated only by '.' (u.s. → us). A lone
-// letter or "a. m." with a space still drops. Shared by query and index.
-template <typename Fn>
-static void each_surface(std::string_view text, Fn&& emit) {
-    (void)g_tok_inited;
-    std::string tok;
-    std::string acro;
-    tok.reserve(32);
-    acro.reserve(8);
-
-    auto flush_acro = [&]() {
-        if (acro.size() >= 2) emit(std::string_view(acro));
-        acro.clear();
-    };
-
-    auto take_tok = [&]() {
-        if (tok.empty()) return;
-        if (tok.size() == 1 && tok[0] >= 'a' && tok[0] <= 'z') {
-            acro.push_back(tok[0]);
-        } else {
-            flush_acro();
-            if (tok.size() > 1) emit(std::string_view(tok));
-        }
-        tok.clear();
-    };
-
-    for (unsigned char uc : text) {
-        if (g_tok_alnum[uc]) {
-            tok.push_back(static_cast<char>(g_tok_lower[uc]));
-        } else {
-            take_tok();
-            if (uc != static_cast<unsigned char>('.')) flush_acro();
-        }
-    }
-    take_tok();
-    flush_acro();
-}
-
-std::vector<std::pair<std::string, uint32_t>>
-cpp_tokenize(const std::string& text, const TokenizerCfg& cfg) {
-    std::vector<std::pair<std::string, uint32_t>> tokens;
-    tokens.reserve(text.size() / 6);
-    uint32_t pos = 0;
-
-    each_surface(text, [&](std::string_view sv) {
-        std::string surface(sv);
-        uint32_t this_pos = pos++;
-        if (cfg.remove_stop && INDEX_STOPWORDS.count(surface)) return;
-        tokens.push_back({apply_stem(surface, cfg.stemmer), this_pos});
-    });
-    return tokens;
-}
-
-void accumulate_tf(
-    std::string_view text, const TokenizerCfg& cfg, uint32_t title_window,
-    std::unordered_map<std::string, uint32_t>& term_data,
-    std::unordered_map<std::string, uint32_t>& title_tf,
-    uint32_t& d_len)
-{
-    uint32_t pos = 0;
-    each_surface(text, [&](std::string_view sv) {
-        std::string surface(sv);
-        uint32_t this_pos = pos++;
-        if (cfg.remove_stop && INDEX_STOPWORDS.count(surface)) return;
-        const std::string& stem = apply_stem(surface, cfg.stemmer);
-        term_data[stem]++;
-        if (this_pos < title_window) title_tf[stem]++;
-        ++d_len;
-    });
 }

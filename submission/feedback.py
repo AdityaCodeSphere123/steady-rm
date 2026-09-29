@@ -14,18 +14,9 @@ sources are always rebuilt and a binary built elsewhere is never loaded
 building or loading fails, the module falls back to the pure-Python
 implementation in _feedback_py.py, so the entrypoints always work.
 
-Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Dirichlet query likelihood (JM optional) + sequential-dependence
-           proximity features + rank prior from the candidate order,
-           fused by within-pool z-score.
-  Track B  RM3: lambda * query part + (1 - lambda) * relevance model;
-           the relevance model is RM1, RM2 or a mixture of the two.
-  Track C  Robustness from how the seed is weighted and filtered:
-           P(D|Q)-weighted seeds, query anchoring, term consensus, RM2's
-           co-occurrence requirement, optional outlier down-weighting and
-           adaptive lambda. Nothing reads score_candidates() output or keys
-           off the query text. The only cache is collection counts of query
-           term PAIRS: background statistics, independent of any seed.
+Track A is F2EXP plus BM25, sequential-dependence proximity, a lead-field
+mix, a length prior, and a rank prior from the candidate order. With
+lambda = 1, Track B calls the same ranker, so a noisy seed cannot move it.
 
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
@@ -35,7 +26,6 @@ import importlib.util
 import json
 import os
 import subprocess
-import sys
 import tempfile
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -48,22 +38,15 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden champ 0.5368 / 0.4563 / B=A / C=1 / final 0.7950. Rank 1.
-# w_od=0.25, bm25_delta=0.25, bm25_b=0.4, bm25_k1=1.2, len_prior=0.3, w_uw=0.15.
-# MAP fell 0.4567 -> 0.4563 when delta moved 0.5 -> 0.25.
-# Old Dirichlet 0.5327: ranker=0 bm25_w=0 smoothing=0 mu_mode=0 mu_factor=3
-# len_prior=0.08 lead_w=0.14 lead_len=12 w_od=0.1 w_uw=0.15 uw_window=8
-# prior_w=0.35 prior_k=20 query_stop=1 qstop_min_len=4.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 0, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
-    "w_od": 0.25, "w_uw": 0.15, "uw_window": 8,
+    "w_od": 0.25, "w_uw": 0.15, "uw_window": 16,
     "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
     "prior_w": 0.12, "prior_k": 7,
     "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
-    "pool_lambda": 1.0, "pool_docs": 8, "rm_rounds": 0,
-    "ranker": 1, "ax_b": 0.5, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
+    "ranker": 1, "ax_b": 0.5, "ax_k": 0.35, "ax_c": 1.0, "qspell": 0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
@@ -75,11 +58,6 @@ PARAMS: Dict[str, float] = {
 
 _lib = None
 _py = None
-
-
-# ---------------------------------------------------------------------------
-# Build / load
-# ---------------------------------------------------------------------------
 
 def _digest(flags: Sequence[str]) -> str:
     h = hashlib.sha256()
