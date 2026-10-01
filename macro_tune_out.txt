@@ -1,0 +1,237 @@
+datasets antique:200 arguana:1406 cacm:52 cranfield:225 fiqa:648 full:50 nfcorpus:323 quora_tune:800 scidocs:1000 scifact:300 touche2020:49 vaswani:93
+base w_od=0.25 w_uw=0.15 uw_window=16 lead_w=0.22 lead_len=8 lead_mu=60 len_prior=0.3 prior_w=0.12 prior_k=7 bm25_w=1 bm25_k1=1.2 bm25_b=0.4 bm25_delta=0.25 ax_b=0.5 ax_k=0.35 ax_c=1 jm_lambda=0.5 mu_factor=8 query_stop=2
+
+# w_od  base 0.4361/0.2505  (18s)
+  w_od=0.15  macro 0.4366/0.2501  d +0.0005/-0.0004  worstN -0.0037
+  w_od=0.18  macro 0.4363/0.2502  d +0.0002/-0.0003  worstN -0.0029
+  w_od=0.21  macro 0.4366/0.2503  d +0.0005/-0.0002  worstN -0.0014
+  w_od=0.25  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  w_od=0.28  macro 0.4359/0.2505  d -0.0002/+0.0001  worstN -0.0017
+  w_od=0.31  macro 0.4354/0.2503  d -0.0007/-0.0001  worstN -0.0031
+  w_od=0.35  macro 0.4353/0.2503  d -0.0008/-0.0001  worstN -0.0046
+
+# w_uw  base 0.4361/0.2505  (17s)
+  w_uw=0.05  macro 0.4370/0.2500  d +0.0009/-0.0005  worstN -0.0072
+  w_uw=0.1  macro 0.4365/0.2502  d +0.0004/-0.0003  worstN -0.0037
+  w_uw=0.15  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  w_uw=0.2  macro 0.4362/0.2509  d +0.0001/+0.0005  worstN -0.0025 KEEP
+  w_uw=0.25  macro 0.4360/0.2507  d -0.0001/+0.0002  worstN -0.0054
+  w_uw=0.3  macro 0.4360/0.2508  d -0.0001/+0.0004  worstN -0.0066
+  -> best tick w_uw=0.2  d +0.0001/+0.0005
+
+# uw_window  base 0.4361/0.2505  (27s)
+  uw_window=8  macro 0.4369/0.2505  d +0.0008/+0.0001  worstN -0.0024 KEEP
+  uw_window=12  macro 0.4365/0.2504  d +0.0004/-0.0001  worstN -0.0012
+  uw_window=16  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  uw_window=20  macro 0.4359/0.2500  d -0.0002/-0.0005  worstN -0.0043
+  uw_window=24  macro 0.4361/0.2500  d +0.0000/-0.0005  worstN -0.0029
+  -> best tick uw_window=8  d +0.0008/+0.0001
+
+# lead_w  base 0.4361/0.2505  (17s)
+  lead_w=0.1  macro 0.4322/0.2487  d -0.0039/-0.0017  worstN -0.0172
+  lead_w=0.14  macro 0.4344/0.2498  d -0.0017/-0.0006  worstN -0.0085
+  lead_w=0.18  macro 0.4351/0.2500  d -0.0011/-0.0005  worstN -0.0060
+  lead_w=0.22  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_w=0.26  macro 0.4375/0.2508  d +0.0013/+0.0004  worstN -0.0012 KEEP
+  lead_w=0.3  macro 0.4378/0.2510  d +0.0017/+0.0005  worstN -0.0019 KEEP
+  lead_w=0.34  macro 0.4376/0.2507  d +0.0015/+0.0002  worstN -0.0021 KEEP
+  -> best tick lead_w=0.3  d +0.0017/+0.0005
+
+# lead_len  base 0.4361/0.2505  (16s)
+  lead_len=4  macro 0.4337/0.2490  d -0.0024/-0.0015  worstN -0.0092
+  lead_len=6  macro 0.4349/0.2496  d -0.0012/-0.0009  worstN -0.0052
+  lead_len=8  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_len=10  macro 0.4363/0.2507  d +0.0002/+0.0002  worstN -0.0026 KEEP
+  lead_len=12  macro 0.4363/0.2507  d +0.0002/+0.0002  worstN -0.0041 KEEP
+  lead_len=14  macro 0.4359/0.2508  d -0.0002/+0.0003  worstN -0.0043
+  -> best tick lead_len=10  d +0.0002/+0.0002
+
+# lead_mu  base 0.4361/0.2505  (16s)
+  lead_mu=30  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=40  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=50  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=60  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=80  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=100  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+
+# len_prior  base 0.4361/0.2505  (16s)
+  len_prior=0.1  macro 0.4356/0.2504  d -0.0005/-0.0001  worstN -0.0061
+  len_prior=0.18  macro 0.4359/0.2505  d -0.0002/+0.0000  worstN -0.0030
+  len_prior=0.24  macro 0.4359/0.2503  d -0.0002/-0.0002  worstN -0.0017
+  len_prior=0.3  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  len_prior=0.36  macro 0.4364/0.2505  d +0.0003/+0.0000  worstN -0.0003 KEEP
+  len_prior=0.42  macro 0.4366/0.2506  d +0.0005/+0.0002  worstN -0.0009 KEEP
+  -> best tick len_prior=0.42  d +0.0005/+0.0002
+
+# longq_n  base 0.4361/0.2505  (15s)
+  longq_n=0  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  longq_n=4  macro 0.4344/0.2493  d -0.0017/-0.0011  worstN -0.0072
+  longq_n=6  macro 0.4355/0.2502  d -0.0006/-0.0003  worstN -0.0028
+  longq_n=8  macro 0.4360/0.2503  d -0.0002/-0.0001  worstN -0.0016
+  longq_n=12  macro 0.4359/0.2502  d -0.0002/-0.0002  worstN -0.0012
+
+# prior_w  base 0.4361/0.2505  (16s)
+  prior_w=0.04  macro 0.4351/0.2500  d -0.0010/-0.0004  worstN -0.0091
+  prior_w=0.08  macro 0.4357/0.2504  d -0.0004/-0.0000  worstN -0.0044
+  prior_w=0.12  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  prior_w=0.16  macro 0.4370/0.2508  d +0.0009/+0.0004  worstN -0.0047 KEEP
+  prior_w=0.2  macro 0.4364/0.2500  d +0.0003/-0.0004  worstN -0.0075
+  prior_w=0.24  macro 0.4363/0.2496  d +0.0002/-0.0008  worstN -0.0105
+  -> best tick prior_w=0.16  d +0.0009/+0.0004
+
+# prior_k  base 0.4361/0.2505  (16s)
+  prior_k=4  macro 0.4362/0.2505  d +0.0000/+0.0001  worstN -0.0024
+  prior_k=5  macro 0.4361/0.2507  d +0.0000/+0.0002  worstN -0.0024
+  prior_k=7  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  prior_k=9  macro 0.4361/0.2505  d -0.0000/+0.0001  worstN -0.0016
+  prior_k=12  macro 0.4362/0.2505  d +0.0001/+0.0000  worstN -0.0027
+  prior_k=16  macro 0.4365/0.2504  d +0.0004/-0.0001  worstN -0.0049
+
+# bm25_w  base 0.4361/0.2505  (15s)
+  bm25_w=0.6  macro 0.4350/0.2496  d -0.0011/-0.0009  worstN -0.0081
+  bm25_w=0.8  macro 0.4359/0.2503  d -0.0002/-0.0002  worstN -0.0029
+  bm25_w=1  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  bm25_w=1.2  macro 0.4362/0.2504  d +0.0001/-0.0000  worstN -0.0031
+  bm25_w=1.4  macro 0.4359/0.2503  d -0.0002/-0.0002  worstN -0.0053
+
+# bm25_k1  base 0.4361/0.2505  (15s)
+  bm25_k1=0.8  macro 0.4342/0.2499  d -0.0019/-0.0006  worstN -0.0086
+  bm25_k1=1  macro 0.4355/0.2503  d -0.0006/-0.0001  worstN -0.0042
+  bm25_k1=1.2  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  bm25_k1=1.4  macro 0.4368/0.2504  d +0.0007/-0.0000  worstN -0.0034
+  bm25_k1=1.6  macro 0.4366/0.2503  d +0.0005/-0.0002  worstN -0.0023
+
+# bm25_b  base 0.4361/0.2505  (16s)
+  bm25_b=0.25  macro 0.4356/0.2491  d -0.0005/-0.0013  worstN -0.0088
+  bm25_b=0.3  macro 0.4360/0.2497  d -0.0001/-0.0008  worstN -0.0075
+  bm25_b=0.35  macro 0.4365/0.2503  d +0.0004/-0.0002  worstN -0.0032
+  bm25_b=0.4  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  bm25_b=0.5  macro 0.4357/0.2506  d -0.0004/+0.0001  worstN -0.0061
+  bm25_b=0.55  macro 0.4355/0.2505  d -0.0006/+0.0000  worstN -0.0100
+
+# bm25_delta  base 0.4361/0.2505  (16s)
+  bm25_delta=0.05  macro 0.4358/0.2500  d -0.0003/-0.0005  worstN -0.0035
+  bm25_delta=0.15  macro 0.4358/0.2503  d -0.0003/-0.0002  worstN -0.0021
+  bm25_delta=0.25  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  bm25_delta=0.35  macro 0.4364/0.2506  d +0.0003/+0.0001  worstN -0.0007 KEEP
+  bm25_delta=0.45  macro 0.4357/0.2504  d -0.0004/-0.0000  worstN -0.0045
+  bm25_delta=0.55  macro 0.4355/0.2502  d -0.0006/-0.0002  worstN -0.0026
+  -> best tick bm25_delta=0.35  d +0.0003/+0.0001
+
+# ax_b  base 0.4361/0.2505  (16s)
+  ax_b=0.3  macro 0.4346/0.2495  d -0.0015/-0.0009  worstN -0.0047
+  ax_b=0.4  macro 0.4358/0.2503  d -0.0003/-0.0001  worstN -0.0036
+  ax_b=0.5  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  ax_b=0.6  macro 0.4365/0.2505  d +0.0004/+0.0001  worstN -0.0034 KEEP
+  ax_b=0.7  macro 0.4363/0.2508  d +0.0002/+0.0003  worstN -0.0032 KEEP
+  -> best tick ax_b=0.7  d +0.0002/+0.0003
+
+# ax_k  base 0.4361/0.2505  (16s)
+  ax_k=0.2  macro 0.4328/0.2483  d -0.0033/-0.0021  worstN -0.0202
+  ax_k=0.28  macro 0.4356/0.2504  d -0.0005/-0.0001  worstN -0.0041
+  ax_k=0.35  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  ax_k=0.42  macro 0.4364/0.2498  d +0.0003/-0.0007  worstN -0.0056
+  ax_k=0.5  macro 0.4337/0.2479  d -0.0024/-0.0026  worstN -0.0128
+
+# ax_c  base 0.4361/0.2505  (15s)
+  ax_c=0.6  macro 0.4363/0.2509  d +0.0002/+0.0004  worstN -0.0043 KEEP
+  ax_c=0.8  macro 0.4363/0.2506  d +0.0002/+0.0001  worstN -0.0034
+  ax_c=1  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  ax_c=1.2  macro 0.4357/0.2502  d -0.0004/-0.0002  worstN -0.0027
+  ax_c=1.5  macro 0.4354/0.2499  d -0.0007/-0.0006  worstN -0.0047
+  -> best tick ax_c=0.6  d +0.0002/+0.0004
+
+# jm_lambda  base 0.4361/0.2505  (15s)
+  jm_lambda=0.2  macro 0.4358/0.2504  d -0.0003/-0.0000  worstN -0.0034
+  jm_lambda=0.35  macro 0.4361/0.2507  d +0.0000/+0.0002  worstN -0.0021
+  jm_lambda=0.5  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  jm_lambda=0.65  macro 0.4364/0.2501  d +0.0003/-0.0003  worstN -0.0038
+  jm_lambda=0.8  macro 0.4367/0.2499  d +0.0006/-0.0006  worstN -0.0060
+
+# mu_factor  base 0.4361/0.2505  (17s)
+  mu_factor=2  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  mu_factor=4  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  mu_factor=6  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  mu_factor=8  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  mu_factor=10  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  mu_factor=12  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+
+# query_stop  base 0.4361/0.2505  (11s)
+  query_stop=1  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  query_stop=2  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+
+# qstop_min_len  base 0.4361/0.2505  (12s)
+  qstop_min_len=0  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  qstop_min_len=3  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  qstop_min_len=4  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+
+# qstop_list  base 0.4361/0.2505  (15s)
+  qstop_list=0  macro 0.4361/0.2505  d +0.0000/+0.0000  worstN +0.0000
+  qstop_list=1  macro 0.4338/0.2478  d -0.0023/-0.0027  worstN -0.0246
+  qstop_list=2  macro 0.4289/0.2464  d -0.0072/-0.0041  worstN -0.0333
+
+# coordinate
+r1 w_od stay 0.25
+r1 w_uw 0.15->0.2  0.4361/0.2505 -> 0.4362/0.2509
+r1 uw_window 16->8  0.4362/0.2509 -> 0.4374/0.2509
+r1 lead_w 0.22->0.3  0.4374/0.2509 -> 0.4386/0.2515
+r1 lead_len 8->12  0.4386/0.2515 -> 0.4393/0.2521
+r1 lead_mu stay 60
+r1 len_prior 0.3->0.24  0.4393/0.2521 -> 0.4398/0.2525
+r1 longq_n stay 0
+r1 prior_w stay 0.12
+r1 prior_k 7->4  0.4398/0.2525 -> 0.4400/0.2528
+r1 bm25_w stay 1
+r1 bm25_k1 stay 1.2
+r1 bm25_b stay 0.4
+r1 bm25_delta stay 0.25
+r1 ax_b stay 0.5
+r1 ax_k stay 0.35
+r1 ax_c stay 1
+r1 jm_lambda stay 0.5
+r1 mu_factor stay 8
+r1 query_stop stay 2
+r1 qstop_min_len stay 0
+r1 qstop_list stay 0
+r2 w_od stay 0.25
+r2 w_uw stay 0.2
+r2 uw_window stay 8
+r2 lead_w stay 0.3
+r2 lead_len stay 12
+r2 lead_mu stay 60
+r2 len_prior stay 0.24
+r2 longq_n stay 0
+r2 prior_w stay 0.12
+r2 prior_k stay 4
+r2 bm25_w stay 1
+r2 bm25_k1 stay 1.2
+r2 bm25_b stay 0.4
+r2 bm25_delta stay 0.25
+r2 ax_b stay 0.5
+r2 ax_k stay 0.35
+r2 ax_c stay 1
+r2 jm_lambda stay 0.5
+r2 mu_factor stay 8
+r2 query_stop stay 2
+r2 qstop_min_len stay 0
+r2 qstop_list stay 0
+round 2 no move
+
+# final vs 0.5369 point
+base macro 0.4361/0.2505
+tuned macro 0.4400/0.2528
+  antique      0.3944/0.2188 -> 0.3914/0.2182  -0.0030/-0.0005
+  arguana      0.3339/0.2150 -> 0.3345/0.2149  +0.0005/-0.0001
+  cacm         0.5272/0.2883 -> 0.5353/0.2908  +0.0081/+0.0025
+  cranfield    0.2898/0.2511 -> 0.2935/0.2562  +0.0038/+0.0051
+  fiqa         0.2672/0.2050 -> 0.2710/0.2090  +0.0038/+0.0040
+  full         0.6446/0.0154 -> 0.6597/0.0158  +0.0150/+0.0004
+  nfcorpus     0.3216/0.1226 -> 0.3231/0.1233  +0.0014/+0.0008
+  quora_tune   0.7154/0.6467 -> 0.7214/0.6532  +0.0060/+0.0066
+  scidocs      0.1626/0.0964 -> 0.1628/0.0966  +0.0002/+0.0003
+  scifact      0.6810/0.6362 -> 0.6894/0.6449  +0.0084/+0.0087
+  touche2020   0.4561/0.1498 -> 0.4577/0.1489  +0.0015/-0.0010
+  vaswani      0.4393/0.1603 -> 0.4408/0.1617  +0.0015/+0.0013
+CHANGED w_uw=0.2 uw_window=8 lead_w=0.3 lead_len=12 len_prior=0.24 prior_k=4
+elapsed 1073s
+wrote /Users/aditya/Desktop/classes/COL764-Assignment2/macro_tune_result.json
