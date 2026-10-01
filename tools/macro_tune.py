@@ -1,10 +1,14 @@
 """
-Fine one-parameter sweep, then a short coordinate pass, over every local
-dataset. Starts from the hidden 0.5369 / 0.4570 parameters.
+One-parameter sweep, then a short coordinate pass, over every local dataset.
+Starts from the parameters currently in submission/feedback.py.
 
-A full Cartesian product of these ticks is not runnable. This script tries
-every tick of every parameter from that point, then walks the improving
-ticks together one knob at a time.
+Every knob that Track A reads is swept across its full legal range. lambda
+stays 1, so Track B stays equal to Track A. Knobs that only change the
+relevance model when lambda < 1 are left out: they cannot move this ranker.
+
+A full Cartesian product of these ticks is not runnable. Each tick is tried
+with every other knob held at the start point, then the improving ticks are
+walked together one knob at a time.
 
 Writes macro_tune_out.txt in the repo root after every line, and
 macro_tune_result.json when it finishes.
@@ -26,44 +30,67 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "macro_tune_out.txt")
 RESULT = os.path.join(ROOT, "macro_tune_result.json")
 
-# Hidden champ. lambda stays 1 so Track B equals Track A.
+def ticks(lo, hi, step):
+    n = int(round((hi - lo) / step))
+    return [round(lo + i * step, 4) for i in range(n + 1)]
+
+
+# Start point: the ranker in submission/feedback.py. lambda stays 1.
 BASE = dict(
-    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0,
+    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
     smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
-    mu_mode=1, mu_loo_scale=1.0,
+    mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
     w_od=0.25, w_uw=0.15, uw_window=16,
     lead_w=0.22, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
     prior_w=0.12, prior_k=7,
     bm25_w=1.0, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25,
-    ranker=1, ax_b=0.5, ax_k=0.35, ax_c=1.0, qspell=0,
+    pool_lambda=1.0, pool_docs=8,
+    ranker=1, ax_b=0.5, ax_k=0.35, ax_c=1.0, ax_w=0.0,
     lambda_=1.0,
 )
 
-# Small ticks around the champ. Integer-like knobs step by their natural unit.
+# Tokenisation knobs are applied at prepare(), so each tick rebuilds the index.
+PREP = {"stemmer", "doc_stop", "mu_mode", "mu_loo_docs"}
+
+# Full range of every knob Track A reads. Enums list every legal value.
 GRID = [
-    ("w_od", [0.15, 0.18, 0.21, 0.25, 0.28, 0.31, 0.35]),
-    ("w_uw", [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]),
-    ("uw_window", [8, 12, 16, 20, 24]),
-    ("lead_w", [0.10, 0.14, 0.18, 0.22, 0.26, 0.30, 0.34]),
-    ("lead_len", [4, 6, 8, 10, 12, 14]),
-    ("lead_mu", [30, 40, 50, 60, 80, 100]),
-    ("len_prior", [0.10, 0.18, 0.24, 0.30, 0.36, 0.42]),
-    ("longq_n", [0, 4, 6, 8, 12]),
-    ("prior_w", [0.04, 0.08, 0.12, 0.16, 0.20, 0.24]),
-    ("prior_k", [4, 5, 7, 9, 12, 16]),
-    ("bm25_w", [0.6, 0.8, 1.0, 1.2, 1.4]),
-    ("bm25_k1", [0.8, 1.0, 1.2, 1.4, 1.6]),
-    ("bm25_b", [0.25, 0.30, 0.35, 0.40, 0.50, 0.55]),
-    ("bm25_delta", [0.05, 0.15, 0.25, 0.35, 0.45, 0.55]),
-    ("ax_b", [0.30, 0.40, 0.50, 0.60, 0.70]),
-    ("ax_k", [0.20, 0.28, 0.35, 0.42, 0.50]),
-    ("ax_c", [0.60, 0.80, 1.00, 1.20, 1.50]),
-    ("jm_lambda", [0.20, 0.35, 0.50, 0.65, 0.80]),
-    ("mu_factor", [2, 4, 6, 8, 10, 12]),
-    ("query_stop", [1, 2]),
-    ("qstop_min_len", [0, 3, 4]),
-    ("qstop_list", [0, 1, 2]),
+    ("stemmer", [0, 1, 2]),
+    ("doc_stop", [0, 1]),
+    ("query_stop", [0, 1, 2]),
+    ("qstop_min_len", [0, 1, 2, 3, 4, 5, 6, 8]),
+    ("qstop_list", [0, 1, 2, 3]),
+    ("qspell", [0, 1, 2]),
+    ("smoothing", [0, 1, 2]),
+    ("jm_lambda", ticks(0.0, 0.95, 0.05)),
+    ("mu", [0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 4000]),
+    ("mu_factor", [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24]),
+    ("mu_min", [50, 100, 250, 500, 1000, 1500]),
+    ("mu_max", [800, 1500, 2500, 4000, 8000]),
+    ("mu_mode", [0, 1]),
+    ("mu_loo_scale", [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]),
+    ("mu_loo_docs", [500, 1000, 2500, 5000, 10000]),
+    ("w_od", ticks(0.0, 0.50, 0.05)),
+    ("w_uw", ticks(0.0, 0.50, 0.05)),
+    ("uw_window", [2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48]),
+    ("lead_w", ticks(0.0, 0.50, 0.02)),
+    ("lead_len", [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48]),
+    ("lead_mu", [5, 10, 20, 30, 40, 50, 60, 80, 100, 150, 200, 400]),
+    ("len_prior", ticks(0.0, 0.60, 0.05)),
+    ("longq_n", [0, 2, 4, 6, 8, 10, 12, 16, 20, 32]),
+    ("prior_w", ticks(0.0, 0.50, 0.02)),
+    ("prior_k", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 30, 40, 60]),
+    ("bm25_w", ticks(0.0, 2.0, 0.2)),
+    ("bm25_k1", ticks(0.2, 2.4, 0.2)),
+    ("bm25_b", ticks(0.0, 1.0, 0.1)),
+    ("bm25_delta", ticks(0.0, 1.0, 0.05)),
+    ("pool_lambda", ticks(0.0, 1.0, 0.05)),
+    ("pool_docs", [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]),
+    ("ranker", [0, 1]),
+    ("ax_b", ticks(0.1, 1.2, 0.1)),
+    ("ax_k", ticks(0.05, 1.0, 0.05)),
+    ("ax_c", [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]),
+    ("ax_w", ticks(0.0, 1.5, 0.15)),
 ]
 
 
@@ -123,14 +150,20 @@ def score_name(name, data, p):
 
 
 def sweep_knob(key, vals, cur, names, data):
-    """Prepare each corpus once, score every tick of this knob."""
+    """Score every tick. Tokenisation knobs rebuild each corpus per tick."""
     out = {}
     trial = params_of(cur)
+    prep = key in PREP
     for name in names:
-        fb.prepare(os.path.join(ROOT, "data", name, "corpus.jsonl"))
+        corpus = os.path.join(ROOT, "data", name, "corpus.jsonl")
+        if not prep:
+            fb.set_params(**trial)
+            fb.prepare(corpus)
         for v in vals:
             trial[key] = float(v)
             fb.set_params(**trial)
+            if prep:
+                fb.prepare(corpus)
             out.setdefault(float(v), {})[name] = score_name(name, data, trial)
     return out
 
@@ -147,14 +180,10 @@ def main():
     names, data = load_sets()
     cur = dict(BASE)
     log("datasets " + " ".join(f"{n}:{len(data[n][2])}" for n in names))
-    log("base " + " ".join(f"{k}={cur[k]:g}" for k in (
-        "w_od", "w_uw", "uw_window", "lead_w", "lead_len", "lead_mu",
-        "len_prior", "prior_w", "prior_k", "bm25_w", "bm25_k1", "bm25_b",
-        "bm25_delta", "ax_b", "ax_k", "ax_c", "jm_lambda", "mu_factor",
-        "query_stop")))
+    log("base " + " ".join(f"{k}={cur[k]:g}" for k, _ in GRID))
     t0 = time.perf_counter()
 
-    # Phase 1: every tick, holding every other knob at the 0.5369 point.
+    # Phase 1: every tick, holding every other knob at the start point.
     phase1 = []
     base_tab = None
     for key, vals in GRID:
@@ -219,7 +248,7 @@ def main():
 
     # Final table against the original champ.
     champ = dict(BASE)
-    log("\n# final vs 0.5369 point")
+    log("\n# final vs start point")
     rows = {}
     for label, pcur in (("base", champ), ("tuned", cur)):
         acc = {}
