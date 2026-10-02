@@ -76,11 +76,6 @@ PARAMS: Dict[str, float] = {
 _lib = None
 _py = None
 
-
-# ---------------------------------------------------------------------------
-# Build / load
-# ---------------------------------------------------------------------------
-
 def _digest(flags: Sequence[str]) -> str:
     h = hashlib.sha256()
     for name in _SOURCES + _HEADERS:

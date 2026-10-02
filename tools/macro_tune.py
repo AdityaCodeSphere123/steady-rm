@@ -1,7 +1,6 @@
 """
-One-parameter sweep, then a short coordinate pass, over Antique, SciFact,
-Touché 2020, and FiQA only. Starts from the parameters currently in
-submission/feedback.py.
+One-parameter sweep, then a short coordinate pass, over SciFact only.
+Starts from the parameters currently in submission/feedback.py.
 
 Every knob that Track A reads is swept across its full legal range. lambda
 stays 1, so Track B stays equal to Track A. Knobs that only change the
@@ -36,16 +35,16 @@ def ticks(lo, hi, step):
     return [round(lo + i * step, 4) for i in range(n + 1)]
 
 
-# These four only. Antique has three times the weight of each of the others.
-SETS = ("antique", "fiqa", "scifact", "touche2020")
-WEIGHT = {"antique": 3.0, "fiqa": 1.0, "scifact": 1.0, "touche2020": 1.0}
+# SciFact only. Its score mix is the closest local stand-in for the hidden set.
+SETS = ("scifact",)
+WEIGHT = {"scifact": 1.0}
 
 # Start point: the ranker in submission/feedback.py. lambda stays 1.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
+    smoothing=2, jm_lambda=0.65, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
     mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
-    w_od=0.2, w_uw=0.15, uw_window=16,
+    w_od=0.16, w_uw=0.15, uw_window=16,
     lead_w=0.22, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
     prior_w=0.12, prior_k=7,
