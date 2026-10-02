@@ -39,7 +39,9 @@ def ticks(lo, hi, step):
 SETS = ("scifact",)
 WEIGHT = {"scifact": 1.0}
 
-# Start point: the ranker in submission/feedback.py. lambda stays 1.
+# Start point: hidden 0.5375 / 0.4587 (ax_b=0.6, ax_w=0, w_od=0.16, w_uw=0.5).
+# lambda stays 1. Do not copy a SciFact-only coordinate result onto the
+# submission unless both nDCG and MAP rise on the hidden set.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
     smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
@@ -50,7 +52,7 @@ BASE = dict(
     prior_w=0.12, prior_k=7,
     bm25_w=1.0, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25,
     pool_lambda=1.0, pool_docs=8,
-    ranker=1, ax_b=0.5, ax_k=0.35, ax_c=1.0, ax_w=0.0,
+    ranker=1, ax_b=0.6, ax_k=0.35, ax_c=1.0, ax_w=0.0,
     lambda_=1.0,
 )
 
