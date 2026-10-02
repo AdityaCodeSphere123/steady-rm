@@ -1,6 +1,7 @@
 """
-One-parameter sweep, then a short coordinate pass, over every local dataset.
-Starts from the parameters currently in submission/feedback.py.
+One-parameter sweep, then a short coordinate pass, over Antique, SciFact,
+Touché 2020, and FiQA only. Starts from the parameters currently in
+submission/feedback.py.
 
 Every knob that Track A reads is swept across its full legal range. lambda
 stays 1, so Track B stays equal to Track A. Knobs that only change the
@@ -35,18 +36,22 @@ def ticks(lo, hi, step):
     return [round(lo + i * step, 4) for i in range(n + 1)]
 
 
+# These four only. Antique has three times the weight of each of the others.
+SETS = ("antique", "fiqa", "scifact", "touche2020")
+WEIGHT = {"antique": 3.0, "fiqa": 1.0, "scifact": 1.0, "touche2020": 1.0}
+
 # Start point: the ranker in submission/feedback.py. lambda stays 1.
 BASE = dict(
-    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
+    stemmer=2, doc_stop=1, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
+    smoothing=0, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=100, mu_max=2500,
     mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
-    w_od=0.25, w_uw=0.15, uw_window=16,
-    lead_w=0.22, lead_len=8, lead_mu=60,
+    w_od=0.2, w_uw=0.1, uw_window=16,
+    lead_w=0.5, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
-    prior_w=0.12, prior_k=7,
+    prior_w=0.14, prior_k=7,
     bm25_w=1.0, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25,
-    pool_lambda=1.0, pool_docs=8,
-    ranker=1, ax_b=0.5, ax_k=0.35, ax_c=1.0, ax_w=0.0,
+    pool_lambda=0.9, pool_docs=10,
+    ranker=1, ax_b=0.5, ax_k=0.3, ax_c=1.0, ax_w=0.0,
     lambda_=1.0,
 )
 
@@ -120,9 +125,7 @@ def params_of(cur):
 
 def load_sets():
     names, data = [], {}
-    for name in sorted(os.listdir(os.path.join(ROOT, "data"))):
-        if name in ("toy", "quora", "quora_hold"):
-            continue
+    for name in SETS:
         D = os.path.join(ROOT, "data", name)
         need = [f"{D}/queries_dev.tsv", f"{D}/qrels_dev.txt",
                 f"{D}/candidates_dev.jsonl", f"{D}/corpus.jsonl"]
@@ -169,9 +172,9 @@ def sweep_knob(key, vals, cur, names, data):
 
 
 def macro(tab):
-    n = len(tab)
-    return (sum(v[0] for v in tab.values()) / n,
-            sum(v[1] for v in tab.values()) / n)
+    w = sum(WEIGHT[s] for s in tab)
+    return (sum(WEIGHT[s] * v[0] for s, v in tab.items()) / w,
+            sum(WEIGHT[s] * v[1] for s, v in tab.items()) / w)
 
 
 def main():
@@ -179,7 +182,7 @@ def main():
     open(OUT, "w").close()
     names, data = load_sets()
     cur = dict(BASE)
-    log("datasets " + " ".join(f"{n}:{len(data[n][2])}" for n in names))
+    log("datasets " + " ".join(f"{n}:{len(data[n][2])} w={WEIGHT[n]:g}" for n in names))
     log("base " + " ".join(f"{k}={cur[k]:g}" for k, _ in GRID))
     t0 = time.perf_counter()
 
