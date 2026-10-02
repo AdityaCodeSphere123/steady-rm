@@ -42,16 +42,16 @@ WEIGHT = {"antique": 3.0, "fiqa": 1.0, "scifact": 1.0, "touche2020": 1.0}
 
 # Start point: the ranker in submission/feedback.py. lambda stays 1.
 BASE = dict(
-    stemmer=2, doc_stop=1, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=0, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=100, mu_max=2500,
+    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
+    smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
     mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
-    w_od=0.2, w_uw=0.1, uw_window=16,
-    lead_w=0.5, lead_len=8, lead_mu=60,
+    w_od=0.2, w_uw=0.15, uw_window=16,
+    lead_w=0.22, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
-    prior_w=0.14, prior_k=7,
+    prior_w=0.12, prior_k=7,
     bm25_w=1.0, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25,
-    pool_lambda=0.9, pool_docs=10,
-    ranker=1, ax_b=0.5, ax_k=0.3, ax_c=1.0, ax_w=0.0,
+    pool_lambda=1.0, pool_docs=8,
+    ranker=1, ax_b=0.5, ax_k=0.35, ax_c=1.0, ax_w=0.0,
     lambda_=1.0,
 )
 
