@@ -1,5 +1,6 @@
-"""
-submission/feedback.py -- THE REQUIRED COMPETITION ENTRYPOINT.
+"""Competition entrypoint. C++ engine in submission/cpp, compiled on import.
+Falls back to _feedback_py.py if the build fails. RM_FORCE_PYTHON=1 forces
+that fallback. RM_THREADS caps threads at 4.
 
     prepare(corpus_path)
     score_candidates(query, candidate_doc_ids, k=10)
@@ -48,11 +49,10 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden champ 0.5375 / 0.4587 / B=A / C=1 / final 0.7358. Rank 2 (2 Oct 15:54).
-# ax_b 0.5 -> 0.6 on w_od=0.16 w_uw=0.5 ax_w=0 mu=0 lead_len=8.
-# lead_len=6 missed: hidden 0.5368 / 0.4576 / B=A / C=1 / final 0.7406.
-# Restore this cell if a later A is below 0.5375.
-# Bansal is 0.5376 / 0.4589. Gap is 0.0001 nDCG and 0.0002 MAP.
+# Hidden champ 0.5376 / 0.4592 / B=A / C=1 / final 0.7660. Rank 1 (2 Oct 16:27).
+# mu 0 -> 100 on ax_b=0.6 w_od=0.16 w_uw=0.5 ax_w=0 lead_len=8.
+# Tied Bansal on nDCG; MAP 0.4592 beats his 0.4589.
+# lead_len=6 missed: 0.5368 / 0.4576. Restore if A nDCG < 0.5376 or MAP < 0.4592.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,

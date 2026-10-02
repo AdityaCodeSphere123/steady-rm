@@ -1,11 +1,4 @@
-// rm_engine: query-likelihood reranking + relevance-model feedback
-// (RM1 / RM2 / RM3) over a provided candidate pool.
-//
-// prepare() tokenises the whole corpus once (4 threads) and keeps it as
-// term-id sequences, so every later call is pure array work: no file I/O,
-// no re-tokenisation. Every retrieval call touches only the candidate pool
-// and the seed set, except the one-off (cached) collection count of a
-// query's term pairs for the proximity feature.
+// Candidate-pool reranker. prepare() tokenises once; later calls score the pool.
 #pragma once
 
 #include "util.h"
@@ -188,7 +181,7 @@ private:
     StrTable vocab_;
     std::vector<uint64_t> cf_;
     std::vector<uint32_t> df_;
-    std::vector<uint8_t> term_flags_;   // bit0 long-stoplist, bit1 short-stoplist
+    std::vector<uint8_t> term_flags_;   // bit0: stemmed Fox stoplist
     uint64_t total_ = 0;
     double avgdl_ = 0;
     double prepare_seconds_ = 0;

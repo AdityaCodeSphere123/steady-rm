@@ -287,13 +287,12 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     avgdl_ = N ? static_cast<double>(T) / N : 0.0;
 
     // Term flags for query / expansion-term stopping, on stemmed forms.
-    auto long_s = stem_set(STOPWORDS, stemmer), short_s = stem_set(INDEX_STOPWORDS, stemmer);
+    auto long_s = stem_set(STOPWORDS, stemmer);
     term_flags_.assign(vocab_.size(), 0);
     std::string tmp;
     for (uint32_t t = 0; t < vocab_.size(); ++t) {
         tmp.assign(vocab_.key(t));
         if (long_s.count(tmp)) term_flags_[t] |= 1;
-        if (short_s.count(tmp)) term_flags_[t] |= 2;
     }
 
     scratch_.clear();
