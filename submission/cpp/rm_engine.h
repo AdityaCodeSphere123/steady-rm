@@ -1,4 +1,11 @@
-// Candidate-pool reranker. prepare() tokenises once; later calls score the pool.
+// rm_engine: query-likelihood reranking + relevance-model feedback
+// (RM1 / RM2 / RM3) over a provided candidate pool.
+//
+// prepare() tokenises the whole corpus once (4 threads) and keeps it as
+// term-id sequences, so every later call is pure array work: no file I/O,
+// no re-tokenisation. Every retrieval call touches only the candidate pool
+// and the seed set, except the one-off (cached) collection count of a
+// query's term pairs for the proximity feature.
 #pragma once
 
 #include "util.h"
@@ -52,8 +59,10 @@ struct Params {
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
-    // BM25+ fused with QL by z-score inside score_candidates (0 = off).
-    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5;
+    // BM25+ added inside score_candidates (0 = off).
+    // bm25_z = 1 z-scores both scores inside the candidate pool (order depends on who else is in the pool).
+    // bm25_z = 0 adds bm25_w * BM25 on its own scale, so a noisy candidate list cannot reshuffle survivors.
+    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5, bm25_z = 1.0;
     // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
     // 1 = off. Track B lambda stays 1 so C remains 1.
     double pool_lambda = 1.0, pool_docs = 8;
@@ -181,7 +190,7 @@ private:
     StrTable vocab_;
     std::vector<uint64_t> cf_;
     std::vector<uint32_t> df_;
-    std::vector<uint8_t> term_flags_;   // bit0: stemmed Fox stoplist
+    std::vector<uint8_t> term_flags_;   // bit0 long-stoplist, bit1 short-stoplist
     uint64_t total_ = 0;
     double avgdl_ = 0;
     double prepare_seconds_ = 0;

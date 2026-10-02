@@ -53,21 +53,23 @@ _FLAG_SETS = [
 # mu 0 -> 100 on ax_b=0.6 w_od=0.16 w_uw=0.5 ax_w=0 lead_len=8.
 # Tied Bansal on nDCG; MAP 0.4592 beats his 0.4589.
 # lead_len=6 missed: 0.5368 / 0.4576. Restore if A nDCG < 0.5376 or MAP < 0.4592.
+# Retention: prior_w 0.12 -> 0 and bm25_z 0 (BM25 added at bm25_w=1.2, not z-scored
+# inside the candidate pool). A reordered candidate list no longer changes the ranking.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
     "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
     "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
-    "prior_w": 0.12, "prior_k": 7,
-    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
+    "prior_w": 0.0, "prior_k": 7,
+    "bm25_w": 1.2, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 0.0,
     "pool_lambda": 1.0, "pool_docs": 8,
     "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 1.0, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "lambda": 1.0, "lambda_min": 0.8, "lambda_max": 1.0, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
 }

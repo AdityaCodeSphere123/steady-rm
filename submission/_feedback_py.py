@@ -1,4 +1,76 @@
-"""Python fallback used only when the C++ engine fails to build."""
+"""
+submission/feedback.py -- THE REQUIRED COMPETITION ENTRYPOINT.
+
+Three public functions, signatures fixed by the assignment (Section 5):
+
+    prepare(corpus_path)
+    score_candidates(query, candidate_doc_ids, k=10)
+    relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k=10)
+
+Everything else in this file is private implementation.
+
+-----------------------------------------------------------------------
+DESIGN SUMMARY
+-----------------------------------------------------------------------
+
+Track A -- score_candidates()
+    Dirichlet-smoothed unigram query likelihood, with mu derived from the
+    collection's own average document length rather than hard-coded, and
+    a small rank prior taken from the order of `candidate_doc_ids` (an
+    input we were handed, and an independent evidence source; fused by
+    within-pool z-score, weight RANK_PRIOR_WEIGHT).
+
+Track B -- relevance_model_feedback(), clean seed
+    Textbook RM1 -> RM3. P(w|R) = sum_D P(w|D) P(D|Q) over the seed set,
+    then P_RM3(w) = lam P(w|Q) + (1-lam) P(w|R), then rank the candidate
+    pool by cross-entropy against P_RM3 (the same ranking as the primer's
+    KL formulation, minus a per-query constant).
+
+Track C -- the same function, contaminated seed
+    Track C is a RETENTION RATIO, not a raw score (harness/leaderboard.py),
+    so the target is "expand enough to gain on B, but have the expansion
+    barely move when the seed is contaminated". Five devices, each
+    independently switchable so the report can ablate them one at a time:
+
+      1. SOFT SEED WEIGHTING. P(D|Q) is a softmax over each seed
+         document's per-query-term mean log-likelihood, sharpened by
+         WEIGHT_BETA. Uniform-random contamination drawn from the
+         candidate pool comes overwhelmingly from the pool's tail, so
+         those documents arrive with low P(D|Q) and contribute almost
+         nothing. This is plain RM1 as Lavrenko & Croft defined it -- the
+         robustness is a property of the original formulation, not a
+         bolt-on.
+      2. RELATIVE-WEIGHT TRIMMING. Seed documents whose normalised weight
+         falls below TRIM_FLOOR x the best seed document's are dropped
+         before estimation.
+      3. QUERY-ANCHORED SEED FILTER. If at least MIN_ANCHORED seed
+         documents contain a query term, estimate from only those. This
+         raises the price of an attack: a poisoned document has to carry
+         query terms to get a vote at all.
+      4. TERM CONSENSUS. An expansion term must be attested by at least
+         MIN_TERM_SUPPORT distinct surviving seed documents, so one
+         contaminated document can no longer introduce a term by itself,
+         however often it repeats it.
+      5. ADAPTIVE LAMBDA. lam is not a constant. It moves between
+         LAMBDA_MIN and LAMBDA_MAX according to two signals computed from
+         the seed alone -- topical coherence of the surviving seed, and
+         the clarity of the estimated relevance model against the
+         collection background. An incoherent, low-clarity seed pulls lam
+         towards 1.0, i.e. back towards the query the user actually typed.
+
+    On (5) and the anti-gaming rules: this reads only (query, seed
+    documents, collection statistics). It never caches score_candidates()
+    output, never keys off query text, and cannot distinguish a clean call
+    from a perturbed one -- it only estimates how internally coherent the
+    seed it was handed happens to be. That is query-performance
+    prediction, the legitimate version of this; see
+    docs/SUBMISSION_INTERFACE.md, "call-order independence", for the
+    illegitimate version.
+
+Conformance: both retrieval functions return only doc_ids drawn from
+`candidate_doc_ids`, never duplicated, sorted by score descending, with
+deterministic doc_id tie-breaking.
+"""
 import json
 import math
 import os

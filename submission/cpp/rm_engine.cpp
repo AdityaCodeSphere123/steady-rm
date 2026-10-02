@@ -28,7 +28,7 @@ namespace rm {
     X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
-    X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(pool_lambda) X(pool_docs) \
+    X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(pool_lambda) X(pool_docs) \
     X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
@@ -287,12 +287,13 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     avgdl_ = N ? static_cast<double>(T) / N : 0.0;
 
     // Term flags for query / expansion-term stopping, on stemmed forms.
-    auto long_s = stem_set(STOPWORDS, stemmer);
+    auto long_s = stem_set(STOPWORDS, stemmer), short_s = stem_set(INDEX_STOPWORDS, stemmer);
     term_flags_.assign(vocab_.size(), 0);
     std::string tmp;
     for (uint32_t t = 0; t < vocab_.size(); ++t) {
         tmp.assign(vocab_.key(t));
         if (long_s.count(tmp)) term_flags_[t] |= 1;
+        if (short_s.count(tmp)) term_flags_[t] |= 2;
     }
 
     scratch_.clear();
@@ -927,16 +928,28 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
         }
     }
     if ((P.bm25_w > 0 || P.ax_w > 0) && docs.size() > 1) {
-        zscore(s);
-        if (P.bm25_w > 0) {
-            auto bm = bm25_pool(q, docs);
-            zscore(bm);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
-        }
-        if (P.ax_w > 0) {
-            auto ax = f2exp_pool(q, docs);
-            zscore(ax);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+        if (P.bm25_z >= 1.0) {
+            zscore(s);
+            if (P.bm25_w > 0) {
+                auto bm = bm25_pool(q, docs);
+                zscore(bm);
+                for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+            }
+            if (P.ax_w > 0) {
+                auto ax = f2exp_pool(q, docs);
+                zscore(ax);
+                for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+            }
+        } else {
+            // Fixed scale: each document's score does not depend on the rest of the pool.
+            if (P.bm25_w > 0) {
+                auto bm = bm25_pool(q, docs);
+                for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+            }
+            if (P.ax_w > 0) {
+                auto ax = f2exp_pool(q, docs);
+                for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+            }
         }
     }
     return fuse_rank(s, cands, P.prior_w, k);
