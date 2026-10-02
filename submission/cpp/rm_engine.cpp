@@ -942,9 +942,24 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
             }
         } else {
             // Fixed scale: each document's score does not depend on the rest of the pool.
+            // bm25_z < 0 multiplies by a query-only idf ratio. The candidate list is not used.
             if (P.bm25_w > 0) {
                 auto bm = bm25_pool(q, docs);
-                for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+                double coef = P.bm25_w;
+                if (P.bm25_z < 0.0 && !q.uniq.empty()) {
+                    const double N = std::max(1.0, static_cast<double>(n_docs()));
+                    const double k = P.ax_k > 0 ? P.ax_k : 0.35;
+                    double f2 = 0, idf = 0;
+                    for (size_t u = 0; u < q.uniq.size(); ++u) {
+                        const double df = std::max(1.0, static_cast<double>(df_[q.uniq[u]]));
+                        const double qtf = static_cast<double>(q.uniq_cnt[u]);
+                        f2 += qtf * std::pow((N + 1.0) / df, k);
+                        idf += qtf * std::log(1.0 + (N - df + 0.5) / (df + 0.5));
+                    }
+                    if (idf > 1e-9 && f2 > 1e-9)
+                        coef *= (P.bm25_z > -1.5) ? (f2 / idf) : (idf / f2);
+                }
+                for (size_t i = 0; i < s.size(); ++i) s[i] += coef * bm[i];
             }
             if (P.ax_w > 0) {
                 auto ax = f2exp_pool(q, docs);

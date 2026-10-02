@@ -47,7 +47,7 @@ BASE = dict(
     smoothing=2, jm_lambda=0.5, mu=100, mu_factor=8, mu_min=250, mu_max=2500,
     mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
     w_od=0.16, w_uw=0.5, uw_window=16,
-    lead_w=0.22, lead_len=8, lead_mu=60,
+    lead_w=0.22, lead_len=16, lead_mu=60,
     len_prior=0.3, longq_n=0,
     prior_w=0.0, prior_k=7,
     bm25_w=1.2, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25, bm25_z=0.0,

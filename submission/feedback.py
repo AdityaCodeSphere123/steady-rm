@@ -55,11 +55,13 @@ _FLAG_SETS = [
 # lead_len=6 missed: 0.5368 / 0.4576. Restore if A nDCG < 0.5376 or MAP < 0.4592.
 # Retention: prior_w 0.12 -> 0 and bm25_z 0 (BM25 added at bm25_w=1.2, not z-scored
 # inside the candidate pool). A reordered candidate list no longer changes the ranking.
+# 3 Oct 01:02: C=1, A 0.5327 / 0.4553, final 0.6733 rank 2. lead_len 8 -> 16 to
+# lift nDCG/MAP without touching the pool prior. lead_len=6 missed earlier.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
     "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
+    "lead_w": 0.22, "lead_len": 16, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
     "prior_w": 0.0, "prior_k": 7,
     "bm25_w": 1.2, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 0.0,
