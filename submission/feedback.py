@@ -63,7 +63,7 @@ PARAMS: Dict[str, float] = {
     "prior_w": 0.12, "prior_k": 7,
     "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
     "pool_lambda": 1.0, "pool_docs": 8,
-    "ranker": 1, "ax_b": 0.5, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
+    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
