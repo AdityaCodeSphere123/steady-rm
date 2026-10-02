@@ -42,9 +42,9 @@ WEIGHT = {"scifact": 1.0}
 # Start point: the ranker in submission/feedback.py. lambda stays 1.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=2, jm_lambda=0.65, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
+    smoothing=2, jm_lambda=0.5, mu=0, mu_factor=8, mu_min=250, mu_max=2500,
     mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
-    w_od=0.16, w_uw=0.15, uw_window=16,
+    w_od=0.16, w_uw=0.5, uw_window=16,
     lead_w=0.22, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
     prior_w=0.12, prior_k=7,
