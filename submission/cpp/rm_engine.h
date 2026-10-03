@@ -107,10 +107,11 @@ struct Params {
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
     double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
-    // Multiplies (RM3(lambda) - RM3(1)), which is (1-lambda) times the
-    // relevance-model residual. Not z-scored, so lambda changes the scores
-    // without rescaling the whole candidate pool.
-    double fb_rm_w = 0.005;
+    // Fraction of the document-score std given to the relevance model
+    // at lambda 0. Added std is fb_rm_w * (1-lambda) * std(base).
+    // The raw residual is only ~4% of that std; multiplying it by 0.005
+    // left 0.7 and 0.8 with the same ranking.
+    double fb_rm_w = 0.2;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 

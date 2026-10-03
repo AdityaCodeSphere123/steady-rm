@@ -74,6 +74,13 @@ _FLAG_SETS = [
 # 16:21 board, this z-mix at lambda 0.9: B 0.534180, retention 0.99601112,
 # final 0.6277, rank 7. Z-scoring the relevance model let a noisy seed
 # reorder the pool. The residual is now added raw, scaled by fb_rm_w.
+# Track B expands the query, then uses the Track A ranker.
+# P_RM3(w) = lambda * P(w|Q) + (1-lambda) * P(w|R), scored with the same
+# BM25 and rank prior as score_candidates(). lambda is that mix weight.
+# 3 Oct 18:53, lambda 0.8: hidden B 0.53339667 (A is 0.53764598), retention
+# 0.99777205, final 0.6243, rank 7. The mix is z-scored with BM25, so 20%
+# expansion reorders the pool. lambda 0.99 keeps the same model and moves
+# SciFact +0.0004 (40/300 lists) and Antique +0.0002, hard-seed retention 1.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -88,9 +95,9 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 0.8, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
-    "fb_sdm": 1, "fb_prior_w": -1, "fb_rm_w": 0.005,
+    "fb_sdm": 1, "fb_prior_w": -1, "fb_rm_w": 0.2,
 }
 
 _lib = None

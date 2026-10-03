@@ -1269,26 +1269,14 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
         return fuse_rank(base, cands, 0.0, k);
     }
-    // Strong document score (no pool z-score, no candidate-order prior) plus
-    // the RM3 residual. Z-scoring the residual is what made a noisy seed
-    // reorder the list at lambda 0.9 (hidden retention 0.99601112).
-    const double saved_lead = P.lead_len;
-    P.lead_len = 16;
-    std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
-    P.lead_len = saved_lead;
-    if (docs.size() > 1) {
-        auto bm = bm25_pool(q, docs);
-        for (size_t i = 0; i < base.size(); ++i) base[i] += 1.2 * bm[i];
-    }
-    if (P.fb_rm_w != 0) {
-        const double saved_ranker = P.ranker;
-        P.ranker = 0;
-        auto ql = score_pool(q, docs, &model, 1.0, P.fb_sdm > 0);
-        auto mix = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
-        P.ranker = saved_ranker;
-        for (size_t i = 0; i < base.size(); ++i) base[i] += P.fb_rm_w * (mix[i] - ql[i]);
-    }
-    return fuse_rank(base, cands, 0.0, k);
+    // RM3 query expansion, then the Track A ranker. The language-model
+    // score is λ·P(Q|D) + (1-λ)·Σ_w P(w|R) log P(w|D). BM25 and the rank
+    // prior are the same ones score_candidates() uses. λ is that weight,
+    // not a later rescaling.
+    std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
+    add_lexical(q, docs, base);
+    const double pw = P.fb_prior_w < 0 ? P.prior_w : P.fb_prior_w;
+    return fuse_rank(base, cands, pw, k);
 }
 
 }  // namespace rm
