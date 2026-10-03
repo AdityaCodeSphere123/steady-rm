@@ -181,6 +181,7 @@ private:
                                    double lam, bool sdm);
     std::vector<double> bm25_pool(const Query& q, const std::vector<int32_t>& docs) const;
     std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
+    void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const;
 
     bool ready_ = false;
     std::string path_;

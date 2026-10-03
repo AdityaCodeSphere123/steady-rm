@@ -927,32 +927,34 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
                 s = score_pool(q, docs, &model, P.pool_lambda, true);
         }
     }
-    if ((P.bm25_w > 0 || P.ax_w > 0) && docs.size() > 1) {
-        if (P.bm25_z >= 1.0) {
-            zscore(s);
-            if (P.bm25_w > 0) {
-                auto bm = bm25_pool(q, docs);
-                zscore(bm);
-                for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
-            }
-            if (P.ax_w > 0) {
-                auto ax = f2exp_pool(q, docs);
-                zscore(ax);
-                for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
-            }
-        } else {
-            // Fixed scale: each document's score does not depend on the rest of the pool.
-            if (P.bm25_w > 0) {
-                auto bm = bm25_pool(q, docs);
-                for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
-            }
-            if (P.ax_w > 0) {
-                auto ax = f2exp_pool(q, docs);
-                for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
-            }
+    add_lexical(q, docs, s);
+    return fuse_rank(s, cands, P.prior_w, k);
+}
+
+void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const {
+    if ((P.bm25_w <= 0 && P.ax_w <= 0) || docs.size() <= 1) return;
+    if (P.bm25_z >= 1.0) {
+        zscore(s);
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            zscore(bm);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            zscore(ax);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+        }
+    } else {
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
         }
     }
-    return fuse_rank(s, cands, P.prior_w, k);
 }
 
 // ---------------------------------------------------------------------------
@@ -1262,7 +1264,20 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
-    std::vector<double> sc = score_pool(q, docs, &model, lam, variant == 3 && P.fb_sdm > 0);
+    // Track A score (query model + BM25) mixed with a z-scored relevance model.
+    // The old path replaced that score with lam*QL/|q| + (1-lam)*RM and dropped BM25,
+    // which is why hidden Track B fell 0.5376 -> 0.5173.
+    std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
+    add_lexical(q, docs, base);
+    const bool fb_sdm = variant == 3 && P.fb_sdm > 0;
+    std::vector<double> rmsc = score_pool(q, docs, &model, 0.0, fb_sdm);
+    if (base.size() > 1) {
+        zscore(base);
+        zscore(rmsc);
+    }
+    const double mix = variant == 3 ? lam : 0.0;
+    std::vector<double> sc(base.size());
+    for (size_t i = 0; i < sc.size(); ++i) sc[i] = mix * base[i] + (1.0 - mix) * rmsc[i];
     double pw = variant != 3 ? 0.0 : (P.fb_prior_w >= 0 ? P.fb_prior_w : P.prior_w);
     return fuse_rank(sc, cands, pw, k);
 }

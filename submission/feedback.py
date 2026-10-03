@@ -70,10 +70,10 @@ _FLAG_SETS = [
 # Restored bm25_delta=0.25.
 # 3 Oct 10:48: staff will drop pass-through Track B (lambda>=1 returns Track A).
 # Restored the 2 Oct 16:27 cell (commit 7543907): prior_w=0.12, bm25_z=1, bm25_w=1,
-# lead_len=8, w_od=0.16. lambda=0.8 so feedback mixes the relevance model
-# (0.9 and 0.95 also change the ranking; 0.8 had the best clean Track B locally).
-# That cell's hidden A was 0.5376/0.4592. After the noisy-candidate rerun its
-# retention was 0.9950, because the rank prior reads the candidate-list order.
+# lead_len=8, w_od=0.16. lambda stays below 1 so feedback is not a pass-through.
+# 10:51 board: A 0.537646/0.459201, B 0.517318, retention 1, final 0.68175.
+# B had dropped BM25 and mixed RM on a different scale. Feedback now z-mixes
+# the Track A score with the relevance model. lambda=0.9.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -88,7 +88,7 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 0.8, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
 }
