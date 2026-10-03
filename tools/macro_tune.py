@@ -1,14 +1,5 @@
 """
 One-parameter sweep, then a short coordinate pass, on SciFact only.
-A tick is kept only when both SciFact nDCG and MAP do not fall.
-
-Starts from the retention-safe point in submission/feedback.py.
-prior_w, bm25_z, pool_lambda, and lambda stay fixed. They read the
-candidate list or the seed. The other Track A knobs are swept past the
-old ranges.
-
-Writes macro_tune_out.txt in the repo root after every line, and
-macro_tune_result.json when it finishes.
 
     source .venv/bin/activate
     python tools/macro_tune.py
@@ -36,7 +27,6 @@ def ticks(lo, hi, step):
 SETS = ("scifact",)
 WEIGHT = {"scifact": 1.0}
 
-# Retention-safe start. prior_w, bm25_z, pool_lambda, lambda_ are not in GRID.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
     smoothing=2, jm_lambda=0.5, mu=100, mu_factor=8, mu_min=250, mu_max=2500,
@@ -54,8 +44,6 @@ BASE = dict(
 # Tokenisation knobs are applied at prepare(), so each tick rebuilds the index.
 PREP = {"stemmer", "doc_stop", "mu_mode", "mu_loo_docs"}
 
-# Movable knobs only. Ranges extend past the old caps.
-# Locked, not swept: prior_w=0, bm25_z=0, pool_lambda=1, lambda=1.
 GRID = [
     ("smoothing", [0, 1, 2]),
     ("jm_lambda", ticks(0.0, 1.0, 0.05)),

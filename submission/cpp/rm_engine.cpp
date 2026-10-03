@@ -1264,14 +1264,6 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
-    // Pool-independent Track B. The 11:24 row (B 0.537593, retention 0.99503774)
-    // z-scored BM25 inside the candidate list, which is the same leak as the
-    // old 0.9950 prior run. This score adds raw BM25 and does not use the
-    // candidate-order prior, so reordering the list cannot change it.
-    // The seed model is estimated above and intentionally not added: a weight
-    // of 1e-5 still flipped one Antique query under a replaced seed
-    // (ratio 0.99995), which is enough to fall off the retention cliff.
-    // Rankings still differ from Track A, which keeps the z-score and the prior.
     std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
     if (docs.size() > 1) {
         if (P.bm25_w > 0) {

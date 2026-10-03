@@ -59,12 +59,9 @@ struct Params {
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
-    // BM25+ added inside score_candidates (0 = off).
-    // bm25_z = 1 z-scores both scores inside the candidate pool (order depends on who else is in the pool).
-    // bm25_z = 0 adds bm25_w * BM25 on its own scale, so a noisy candidate list cannot reshuffle survivors.
+    // BM25+ inside score_candidates (0 = off). bm25_z >= 1 z-scores in the pool.
     double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5, bm25_z = 1.0;
-    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
-    // 1 = off. Track B lambda stays 1 so C remains 1.
+    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids). 1 = off.
     double pool_lambda = 1.0, pool_docs = 8;
     // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;

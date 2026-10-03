@@ -94,7 +94,7 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 0.9999, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "lambda": 0.8, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
 }
