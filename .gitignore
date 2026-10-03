@@ -10,3 +10,10 @@ submission/_build/
 data/*
 !data/README.md
 !data/toy/
+
+# local tuning / packing artifacts
+tune_*.tsv
+macro_tune_out.txt
+macro_tune_result.json
+analysis/
+*.zip
