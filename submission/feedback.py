@@ -82,6 +82,7 @@ _FLAG_SETS = [
 # final 0.77421053. Leave this cell alone.
 # 12:09: Ahlaan ret 1 and B 0.535011, final 0.7768. User same raw scores,
 # ret 0.99999882, final 0.7426. Feedback no longer falls back to Track A.
+# Track B lead_len 16 and raw bm25 weight 1.2: the ranking that scored exact retention 1.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,

@@ -1271,11 +1271,14 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
+    const double saved_lead = P.lead_len;
+    P.lead_len = 16;
     std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
+    P.lead_len = saved_lead;
     if (docs.size() > 1) {
         if (P.bm25_w > 0) {
             auto bm = bm25_pool(q, docs);
-            for (size_t i = 0; i < base.size(); ++i) base[i] += P.bm25_w * bm[i];
+            for (size_t i = 0; i < base.size(); ++i) base[i] += 1.2 * bm[i];
         }
         if (P.ax_w > 0) {
             auto ax = f2exp_pool(q, docs);
