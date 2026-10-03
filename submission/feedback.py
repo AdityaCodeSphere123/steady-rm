@@ -79,10 +79,10 @@ _FLAG_SETS = [
 # adds raw BM25 and does not z-score or use the candidate-order prior.
 # lambda stays below 1 so the pass-through return is not taken.
 # 11:42 board, rank 1: A 0.537646/0.459201, B 0.533102, retention 0.99999882,
-# final 0.77421053. Leave this cell alone.
-# 12:09: Ahlaan ret 1 and B 0.535011, final 0.7768. User same raw scores,
-# ret 0.99999882, final 0.7426. Feedback no longer falls back to Track A.
-# Track B lead_len 16 and raw bm25 weight 1.2: the ranking that scored exact retention 1.
+# final 0.77421053.
+# 3 Oct 15:15: RM3 mix at lambda 0.9 replaced that ranker. A held
+# 0.537646/0.459201, B fell to 0.514493, retention to 0.99697350, final 0.5459.
+# lambda 0.8 with the seed-independent Track B ranker is the cell to beat.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -97,9 +97,9 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 0.8, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
+    "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
-    "fb_sdm": 1, "fb_prior_w": -1,
+    "fb_sdm": 1, "fb_prior_w": -1, "fb_lead_len": 16, "fb_bm25_w": 1.2,
 }
 
 _lib = None

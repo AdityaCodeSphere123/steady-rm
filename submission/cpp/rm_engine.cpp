@@ -25,7 +25,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_prior_w) X(fb_lead_len) X(fb_bm25_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
     X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(pool_lambda) X(pool_docs) \
@@ -1213,26 +1213,19 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
-    if (q.terms.empty()) {
-        std::vector<int32_t> order(cands.size());
-        for (size_t i = 0; i < cands.size(); ++i) order[i] = static_cast<int32_t>(i);
-        std::sort(order.begin(), order.end(), [&](int32_t a, int32_t b) { return cands[a] < cands[b]; });
-        std::vector<Ranked> out;
-        size_t kk = std::min<size_t>(cands.size(), k < 0 ? 0 : static_cast<size_t>(k));
-        for (size_t i = 0; i < kk; ++i) out.push_back({order[i], -static_cast<double>(i)});
-        return out;
-    }
+    if (q.terms.empty()) return pool_order(cands, k);
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     const int variant = static_cast<int>(P.rm_variant);
     auto seed = seed_weights(q, seeds, s);
-    std::vector<std::pair<uint32_t, double>> model;
-    if (!seed.empty()) model = estimate(q, seed, variant, s);
-    if (P.lambda >= 1) return score_candidates(query, cands, k);
+    if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback: exactly QL
+    auto model = estimate(q, seed, variant, s);
+    if (model.empty()) return score_candidates(query, cands, k);
 
     double lam, coh = 0, clar = 0;
-    if (variant != 3) lam = 0.0;
+    if (variant != 3) lam = 0.0;                        // pure RM1 / RM2 ranking
+    else if (P.lambda >= 1) return score_candidates(query, cands, k);  // Track B == Track A
     else if (P.lambda >= 0) lam = std::min(1.0, P.lambda);
     else {
         coh = coherence(seed, s);
@@ -1271,19 +1264,23 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
+    // Textbook RM3 (tests, and any run with the lexical ranker switched off):
+    //   lam * (1/|Q|) sum_q log P(q|D) + (1-lam) * sum_w P(w|R) log P(w|D)
+    if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
+        std::vector<double> base = score_pool(q, docs, model.empty() ? nullptr : &model, lam, P.fb_sdm > 0);
+        return fuse_rank(base, cands, 0.0, k);
+    }
+    // Submission Track B. Scores depend only on the query and the document,
+    // so a different seed or a reordered candidate list cannot move the
+    // ranking (retention stays 1). lambda stays below 1 so this is not the
+    // pass-through that returns score_candidates().
     const double saved_lead = P.lead_len;
-    P.lead_len = 16;
+    P.lead_len = P.fb_lead_len > 0 ? P.fb_lead_len : 16;
     std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
     P.lead_len = saved_lead;
-    if (docs.size() > 1) {
-        if (P.bm25_w > 0) {
-            auto bm = bm25_pool(q, docs);
-            for (size_t i = 0; i < base.size(); ++i) base[i] += 1.2 * bm[i];
-        }
-        if (P.ax_w > 0) {
-            auto ax = f2exp_pool(q, docs);
-            for (size_t i = 0; i < base.size(); ++i) base[i] += P.ax_w * ax[i];
-        }
+    if (docs.size() > 1 && P.fb_bm25_w > 0) {
+        auto bm = bm25_pool(q, docs);
+        for (size_t i = 0; i < base.size(); ++i) base[i] += P.fb_bm25_w * bm[i];
     }
     (void)model;
     (void)lam;

@@ -104,6 +104,9 @@ struct Params {
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
     double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
+    // Track B document ranker, independent of the seed set. lead_len and the
+    // raw BM25 weight used only inside relevance_model_feedback().
+    double fb_lead_len = 16, fb_bm25_w = 1.2;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
