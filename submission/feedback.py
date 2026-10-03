@@ -63,21 +63,32 @@ _FLAG_SETS = [
 # and final went 0.7317 -> 0.6656. Restored jm_lambda=0.5.
 # smoothing=0 is the 02:23 row: A 0.530985 / 0.454785, C=1, final 0.6986.
 # SciFact liked it. Hidden nDCG fell. mu=25 and w_od=0.2 also lose Antique and FiQA.
+# bm25_k1=2 (10:08): nDCG 0.532843 -> 0.534393, retention 1 -> 0.99999632,
+# final 0.701944 -> 0.686842. Restored k1=1.2. Do not stack bm25_delta on it.
+# bm25_delta=0 (10:23): nDCG 0.532843 -> 0.532827, MAP 0.455437 -> 0.454601,
+# retention stayed 1. Final 0.71575 is the class percentile, not a better raw score.
+# Restored bm25_delta=0.25.
+# 3 Oct 10:48: staff will drop pass-through Track B (lambda>=1 returns Track A).
+# Restored the 2 Oct 16:27 cell (commit 7543907): prior_w=0.12, bm25_z=1, bm25_w=1,
+# lead_len=8, w_od=0.16. lambda=0.8 so feedback mixes the relevance model
+# (0.9 and 0.95 also change the ranking; 0.8 had the best clean Track B locally).
+# That cell's hidden A was 0.5376/0.4592. After the noisy-candidate rerun its
+# retention was 0.9950, because the rank prior reads the candidate-list order.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
     "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 16, "lead_mu": 60,
+    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
-    "prior_w": 0.0, "prior_k": 7,
-    "bm25_w": 1.2, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 0.0,
+    "prior_w": 0.12, "prior_k": 7,
+    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 1.0,
     "pool_lambda": 1.0, "pool_docs": 8,
     "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
     "rm_variant": 3, "rm2_mix": 0,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
     "agree_gamma": 0,
-    "lambda": 1.0, "lambda_min": 0.8, "lambda_max": 1.0, "coh_w": 0.65,
+    "lambda": 0.8, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
 }

@@ -1,401 +1,394 @@
-datasets scifact:300 w=1
+datasets full:50 w=1
 base smoothing=2 jm_lambda=0.5 mu=100 w_od=0.16 w_uw=0.5 uw_window=16 lead_w=0.22 lead_len=16 lead_mu=60 len_prior=0.3 bm25_w=1.2 bm25_k1=1.2 bm25_b=0.4 bm25_delta=0.25 ax_b=0.6 ax_k=0.35 ax_c=1
 
-# smoothing  base 0.6814/0.6354  (0s)
-  smoothing=0  macro 0.6864/0.6403  d +0.0050/+0.0049  worstN +0.0050 VOTE
-  smoothing=1  macro 0.6805/0.6343  d -0.0009/-0.0011  worstN -0.0009
-  smoothing=2  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  -> best tick smoothing=0  d +0.0050/+0.0049
+# smoothing  base 0.6229/0.0148  (1s)
+  smoothing=0  macro 0.6110/0.0147  d -0.0119/-0.0001  worstN -0.0119
+  smoothing=1  macro 0.6201/0.0149  d -0.0028/+0.0001  worstN -0.0028
+  smoothing=2  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
 
-# jm_lambda  base 0.6814/0.6354  (1s)
-  jm_lambda=0  macro 0.6864/0.6403  d +0.0050/+0.0049  worstN +0.0050 VOTE
-  jm_lambda=0.05  macro 0.6844/0.6392  d +0.0030/+0.0038  worstN +0.0030 VOTE
-  jm_lambda=0.1  macro 0.6819/0.6359  d +0.0005/+0.0005  worstN +0.0005 VOTE
-  jm_lambda=0.15  macro 0.6818/0.6358  d +0.0004/+0.0004  worstN +0.0004 VOTE
-  jm_lambda=0.2  macro 0.6818/0.6358  d +0.0004/+0.0004  worstN +0.0004 VOTE
-  jm_lambda=0.25  macro 0.6817/0.6356  d +0.0003/+0.0003  worstN +0.0003 VOTE
-  jm_lambda=0.3  macro 0.6815/0.6354  d +0.0001/+0.0000  worstN +0.0001
-  jm_lambda=0.35  macro 0.6809/0.6347  d -0.0006/-0.0007  worstN -0.0006
-  jm_lambda=0.4  macro 0.6808/0.6347  d -0.0006/-0.0007  worstN -0.0006
-  jm_lambda=0.45  macro 0.6813/0.6352  d -0.0001/-0.0002  worstN -0.0001
-  jm_lambda=0.5  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  jm_lambda=0.55  macro 0.6817/0.6355  d +0.0003/+0.0001  worstN +0.0003 VOTE
-  jm_lambda=0.6  macro 0.6818/0.6357  d +0.0004/+0.0003  worstN +0.0004 VOTE
-  jm_lambda=0.65  macro 0.6822/0.6362  d +0.0008/+0.0008  worstN +0.0008 VOTE
-  jm_lambda=0.7  macro 0.6822/0.6362  d +0.0008/+0.0008  worstN +0.0008 VOTE
-  jm_lambda=0.75  macro 0.6819/0.6358  d +0.0005/+0.0004  worstN +0.0005 VOTE
-  jm_lambda=0.8  macro 0.6821/0.6361  d +0.0007/+0.0007  worstN +0.0007 VOTE
-  jm_lambda=0.85  macro 0.6818/0.6357  d +0.0004/+0.0004  worstN +0.0004 VOTE
-  jm_lambda=0.9  macro 0.6831/0.6360  d +0.0017/+0.0006  worstN +0.0017 VOTE
-  jm_lambda=0.95  macro 0.6836/0.6357  d +0.0021/+0.0003  worstN +0.0021 VOTE
-  jm_lambda=1  macro 0.6836/0.6357  d +0.0021/+0.0003  worstN +0.0021 VOTE
-  -> best tick jm_lambda=0  d +0.0050/+0.0049
+# jm_lambda  base 0.6229/0.0148  (0s)
+  jm_lambda=0  macro 0.6110/0.0147  d -0.0119/-0.0001  worstN -0.0119
+  jm_lambda=0.05  macro 0.6101/0.0147  d -0.0128/-0.0002  worstN -0.0128
+  jm_lambda=0.1  macro 0.6121/0.0147  d -0.0107/-0.0001  worstN -0.0107
+  jm_lambda=0.15  macro 0.6123/0.0147  d -0.0105/-0.0001  worstN -0.0105
+  jm_lambda=0.2  macro 0.6132/0.0147  d -0.0097/-0.0001  worstN -0.0097
+  jm_lambda=0.25  macro 0.6174/0.0148  d -0.0054/-0.0000  worstN -0.0054
+  jm_lambda=0.3  macro 0.6195/0.0148  d -0.0033/+0.0000  worstN -0.0033
+  jm_lambda=0.35  macro 0.6217/0.0148  d -0.0012/+0.0000  worstN -0.0012
+  jm_lambda=0.4  macro 0.6229/0.0149  d +0.0000/+0.0000  worstN +0.0000
+  jm_lambda=0.45  macro 0.6227/0.0148  d -0.0001/+0.0000  worstN -0.0001
+  jm_lambda=0.5  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  jm_lambda=0.55  macro 0.6214/0.0148  d -0.0015/-0.0001  worstN -0.0015
+  jm_lambda=0.6  macro 0.6200/0.0147  d -0.0028/-0.0001  worstN -0.0028
+  jm_lambda=0.65  macro 0.6195/0.0147  d -0.0033/-0.0001  worstN -0.0033
+  jm_lambda=0.7  macro 0.6205/0.0147  d -0.0024/-0.0001  worstN -0.0024
+  jm_lambda=0.75  macro 0.6199/0.0147  d -0.0030/-0.0001  worstN -0.0030
+  jm_lambda=0.8  macro 0.6209/0.0146  d -0.0020/-0.0002  worstN -0.0020
+  jm_lambda=0.85  macro 0.6241/0.0146  d +0.0012/-0.0002  worstN +0.0012
+  jm_lambda=0.9  macro 0.6245/0.0146  d +0.0016/-0.0002  worstN +0.0016
+  jm_lambda=0.95  macro 0.6248/0.0146  d +0.0019/-0.0002  worstN +0.0019
+  jm_lambda=1  macro 0.6248/0.0146  d +0.0019/-0.0002  worstN +0.0019
 
-# mu  base 0.6814/0.6354  (0s)
-  mu=0  macro 0.6822/0.6362  d +0.0008/+0.0008  worstN +0.0008 VOTE
-  mu=25  macro 0.6806/0.6344  d -0.0008/-0.0010  worstN -0.0008
-  mu=50  macro 0.6811/0.6349  d -0.0003/-0.0005  worstN -0.0003
-  mu=100  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  mu=200  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  mu=400  macro 0.6824/0.6364  d +0.0010/+0.0010  worstN +0.0010 VOTE
-  mu=800  macro 0.6818/0.6357  d +0.0003/+0.0003  worstN +0.0003 VOTE
-  mu=1500  macro 0.6819/0.6354  d +0.0005/+0.0000  worstN +0.0005 VOTE
-  mu=2500  macro 0.6829/0.6357  d +0.0015/+0.0003  worstN +0.0015 VOTE
-  mu=4000  macro 0.6808/0.6338  d -0.0006/-0.0016  worstN -0.0006
-  mu=8000  macro 0.6792/0.6317  d -0.0022/-0.0037  worstN -0.0022
-  -> best tick mu=400  d +0.0010/+0.0010
+# mu  base 0.6229/0.0148  (0s)
+  mu=0  macro 0.6169/0.0147  d -0.0060/-0.0001  worstN -0.0060
+  mu=25  macro 0.6208/0.0148  d -0.0021/-0.0000  worstN -0.0021
+  mu=50  macro 0.6225/0.0148  d -0.0004/-0.0001  worstN -0.0004
+  mu=100  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  mu=200  macro 0.6177/0.0147  d -0.0052/-0.0001  worstN -0.0052
+  mu=400  macro 0.6191/0.0146  d -0.0037/-0.0002  worstN -0.0037
+  mu=800  macro 0.6192/0.0146  d -0.0036/-0.0002  worstN -0.0036
+  mu=1500  macro 0.6189/0.0146  d -0.0039/-0.0002  worstN -0.0039
+  mu=2500  macro 0.6172/0.0146  d -0.0057/-0.0002  worstN -0.0057
+  mu=4000  macro 0.6204/0.0148  d -0.0025/-0.0001  worstN -0.0025
+  mu=8000  macro 0.6262/0.0148  d +0.0033/+0.0000  worstN +0.0033 VOTE
+  -> best tick mu=8000  d +0.0033/+0.0000
 
-# w_od  base 0.6814/0.6354  (1s)
-  w_od=0  macro 0.6805/0.6351  d -0.0009/-0.0003  worstN -0.0009
-  w_od=0.05  macro 0.6809/0.6347  d -0.0005/-0.0007  worstN -0.0005
-  w_od=0.1  macro 0.6808/0.6345  d -0.0007/-0.0009  worstN -0.0007
-  w_od=0.15  macro 0.6817/0.6355  d +0.0003/+0.0001  worstN +0.0003 VOTE
-  w_od=0.16  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  w_od=0.2  macro 0.6816/0.6356  d +0.0002/+0.0002  worstN +0.0002 VOTE
-  w_od=0.25  macro 0.6813/0.6359  d -0.0002/+0.0005  worstN -0.0002
-  w_od=0.3  macro 0.6826/0.6378  d +0.0012/+0.0024  worstN +0.0012 VOTE
-  w_od=0.35  macro 0.6826/0.6377  d +0.0011/+0.0023  worstN +0.0011 VOTE
-  w_od=0.4  macro 0.6850/0.6400  d +0.0036/+0.0047  worstN +0.0036 VOTE
-  w_od=0.45  macro 0.6855/0.6406  d +0.0041/+0.0053  worstN +0.0041 VOTE
-  w_od=0.5  macro 0.6842/0.6389  d +0.0028/+0.0035  worstN +0.0028 VOTE
-  w_od=0.55  macro 0.6838/0.6387  d +0.0024/+0.0033  worstN +0.0024 VOTE
-  w_od=0.6  macro 0.6841/0.6391  d +0.0027/+0.0037  worstN +0.0027 VOTE
-  w_od=0.65  macro 0.6849/0.6401  d +0.0034/+0.0048  worstN +0.0034 VOTE
-  w_od=0.7  macro 0.6839/0.6398  d +0.0025/+0.0044  worstN +0.0025 VOTE
-  w_od=0.75  macro 0.6851/0.6411  d +0.0036/+0.0057  worstN +0.0036 VOTE
-  w_od=0.8  macro 0.6845/0.6405  d +0.0031/+0.0052  worstN +0.0031 VOTE
-  w_od=0.85  macro 0.6835/0.6392  d +0.0021/+0.0038  worstN +0.0021 VOTE
-  w_od=0.9  macro 0.6826/0.6380  d +0.0012/+0.0027  worstN +0.0012 VOTE
-  w_od=0.95  macro 0.6822/0.6376  d +0.0008/+0.0022  worstN +0.0008 VOTE
-  w_od=1  macro 0.6814/0.6370  d -0.0000/+0.0017  worstN -0.0000
-  -> best tick w_od=0.75  d +0.0036/+0.0057
+# w_od  base 0.6229/0.0148  (0s)
+  w_od=0  macro 0.6224/0.0150  d -0.0005/+0.0002  worstN -0.0005
+  w_od=0.05  macro 0.6165/0.0148  d -0.0063/-0.0001  worstN -0.0063
+  w_od=0.1  macro 0.6196/0.0148  d -0.0032/-0.0000  worstN -0.0032
+  w_od=0.15  macro 0.6236/0.0148  d +0.0008/-0.0000  worstN +0.0008
+  w_od=0.16  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  w_od=0.2  macro 0.6207/0.0148  d -0.0021/+0.0000  worstN -0.0021
+  w_od=0.25  macro 0.6160/0.0147  d -0.0069/-0.0002  worstN -0.0069
+  w_od=0.3  macro 0.6161/0.0147  d -0.0068/-0.0001  worstN -0.0068
+  w_od=0.35  macro 0.6164/0.0148  d -0.0065/-0.0001  worstN -0.0065
+  w_od=0.4  macro 0.6141/0.0148  d -0.0087/-0.0001  worstN -0.0087
+  w_od=0.45  macro 0.6126/0.0147  d -0.0103/-0.0001  worstN -0.0103
+  w_od=0.5  macro 0.6133/0.0147  d -0.0095/-0.0001  worstN -0.0095
+  w_od=0.55  macro 0.6116/0.0147  d -0.0113/-0.0001  worstN -0.0113
+  w_od=0.6  macro 0.6135/0.0148  d -0.0093/-0.0000  worstN -0.0093
+  w_od=0.65  macro 0.6130/0.0147  d -0.0099/-0.0001  worstN -0.0099
+  w_od=0.7  macro 0.6130/0.0147  d -0.0098/-0.0001  worstN -0.0098
+  w_od=0.75  macro 0.6068/0.0146  d -0.0161/-0.0002  worstN -0.0161
+  w_od=0.8  macro 0.6041/0.0145  d -0.0188/-0.0003  worstN -0.0188
+  w_od=0.85  macro 0.6036/0.0145  d -0.0193/-0.0003  worstN -0.0193
+  w_od=0.9  macro 0.6039/0.0145  d -0.0190/-0.0003  worstN -0.0190
+  w_od=0.95  macro 0.6034/0.0145  d -0.0195/-0.0004  worstN -0.0195
+  w_od=1  macro 0.6006/0.0144  d -0.0223/-0.0005  worstN -0.0223
 
-# w_uw  base 0.6814/0.6354  (1s)
-  w_uw=0  macro 0.6747/0.6252  d -0.0067/-0.0102  worstN -0.0067
-  w_uw=0.05  macro 0.6743/0.6256  d -0.0071/-0.0098  worstN -0.0071
-  w_uw=0.1  macro 0.6765/0.6282  d -0.0049/-0.0072  worstN -0.0049
-  w_uw=0.15  macro 0.6756/0.6279  d -0.0059/-0.0075  worstN -0.0059
-  w_uw=0.2  macro 0.6824/0.6359  d +0.0010/+0.0005  worstN +0.0010 VOTE
-  w_uw=0.25  macro 0.6823/0.6363  d +0.0009/+0.0009  worstN +0.0009 VOTE
-  w_uw=0.3  macro 0.6819/0.6359  d +0.0005/+0.0005  worstN +0.0005 VOTE
-  w_uw=0.35  macro 0.6819/0.6358  d +0.0005/+0.0004  worstN +0.0005 VOTE
-  w_uw=0.4  macro 0.6813/0.6359  d -0.0001/+0.0005  worstN -0.0001
-  w_uw=0.45  macro 0.6812/0.6357  d -0.0003/+0.0003  worstN -0.0003
-  w_uw=0.5  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  w_uw=0.55  macro 0.6806/0.6344  d -0.0008/-0.0010  worstN -0.0008
-  w_uw=0.6  macro 0.6814/0.6357  d -0.0000/+0.0003  worstN -0.0000
-  w_uw=0.65  macro 0.6829/0.6378  d +0.0015/+0.0024  worstN +0.0015 VOTE
-  w_uw=0.7  macro 0.6843/0.6395  d +0.0029/+0.0041  worstN +0.0029 VOTE
-  w_uw=0.75  macro 0.6841/0.6393  d +0.0027/+0.0039  worstN +0.0027 VOTE
-  w_uw=0.8  macro 0.6819/0.6363  d +0.0005/+0.0009  worstN +0.0005 VOTE
-  w_uw=0.85  macro 0.6814/0.6359  d +0.0000/+0.0005  worstN +0.0000 VOTE
-  w_uw=0.9  macro 0.6819/0.6365  d +0.0004/+0.0011  worstN +0.0004 VOTE
-  w_uw=0.95  macro 0.6800/0.6350  d -0.0014/-0.0004  worstN -0.0014
-  w_uw=1  macro 0.6782/0.6326  d -0.0032/-0.0027  worstN -0.0032
-  w_uw=1.05  macro 0.6776/0.6319  d -0.0038/-0.0035  worstN -0.0038
-  w_uw=1.1  macro 0.6765/0.6304  d -0.0049/-0.0050  worstN -0.0049
-  w_uw=1.15  macro 0.6757/0.6298  d -0.0057/-0.0056  worstN -0.0057
-  w_uw=1.2  macro 0.6748/0.6281  d -0.0066/-0.0073  worstN -0.0066
-  w_uw=1.25  macro 0.6746/0.6277  d -0.0068/-0.0077  worstN -0.0068
-  w_uw=1.3  macro 0.6732/0.6269  d -0.0082/-0.0085  worstN -0.0082
-  w_uw=1.35  macro 0.6733/0.6270  d -0.0081/-0.0084  worstN -0.0081
-  w_uw=1.4  macro 0.6719/0.6251  d -0.0095/-0.0103  worstN -0.0095
-  w_uw=1.45  macro 0.6718/0.6250  d -0.0096/-0.0104  worstN -0.0096
-  w_uw=1.5  macro 0.6705/0.6243  d -0.0109/-0.0111  worstN -0.0109
-  -> best tick w_uw=0.7  d +0.0029/+0.0041
+# w_uw  base 0.6229/0.0148  (0s)
+  w_uw=0  macro 0.6411/0.0155  d +0.0182/+0.0007  worstN +0.0182 VOTE
+  w_uw=0.05  macro 0.6362/0.0153  d +0.0133/+0.0005  worstN +0.0133 VOTE
+  w_uw=0.1  macro 0.6372/0.0154  d +0.0144/+0.0006  worstN +0.0144 VOTE
+  w_uw=0.15  macro 0.6331/0.0153  d +0.0103/+0.0005  worstN +0.0103 VOTE
+  w_uw=0.2  macro 0.6314/0.0152  d +0.0086/+0.0004  worstN +0.0086 VOTE
+  w_uw=0.25  macro 0.6259/0.0149  d +0.0031/+0.0001  worstN +0.0031 VOTE
+  w_uw=0.3  macro 0.6230/0.0149  d +0.0002/+0.0001  worstN +0.0002
+  w_uw=0.35  macro 0.6254/0.0150  d +0.0025/+0.0001  worstN +0.0025 VOTE
+  w_uw=0.4  macro 0.6259/0.0150  d +0.0030/+0.0002  worstN +0.0030 VOTE
+  w_uw=0.45  macro 0.6249/0.0150  d +0.0021/+0.0002  worstN +0.0021 VOTE
+  w_uw=0.5  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  w_uw=0.55  macro 0.6200/0.0148  d -0.0029/+0.0000  worstN -0.0029
+  w_uw=0.6  macro 0.6151/0.0148  d -0.0078/-0.0000  worstN -0.0078
+  w_uw=0.65  macro 0.6125/0.0149  d -0.0104/+0.0001  worstN -0.0104
+  w_uw=0.7  macro 0.6108/0.0149  d -0.0120/+0.0000  worstN -0.0120
+  w_uw=0.75  macro 0.6129/0.0148  d -0.0100/+0.0000  worstN -0.0100
+  w_uw=0.8  macro 0.6135/0.0148  d -0.0094/+0.0000  worstN -0.0094
+  w_uw=0.85  macro 0.6083/0.0147  d -0.0145/-0.0001  worstN -0.0145
+  w_uw=0.9  macro 0.6095/0.0148  d -0.0134/-0.0001  worstN -0.0134
+  w_uw=0.95  macro 0.6053/0.0148  d -0.0176/-0.0000  worstN -0.0176
+  w_uw=1  macro 0.6037/0.0148  d -0.0191/-0.0001  worstN -0.0191
+  w_uw=1.05  macro 0.5999/0.0146  d -0.0229/-0.0002  worstN -0.0229
+  w_uw=1.1  macro 0.5984/0.0146  d -0.0245/-0.0002  worstN -0.0245
+  w_uw=1.15  macro 0.5909/0.0145  d -0.0319/-0.0004  worstN -0.0319
+  w_uw=1.2  macro 0.5890/0.0143  d -0.0338/-0.0005  worstN -0.0338
+  w_uw=1.25  macro 0.5894/0.0143  d -0.0335/-0.0005  worstN -0.0335
+  w_uw=1.3  macro 0.5895/0.0144  d -0.0333/-0.0005  worstN -0.0333
+  w_uw=1.35  macro 0.5900/0.0144  d -0.0329/-0.0004  worstN -0.0329
+  w_uw=1.4  macro 0.5897/0.0144  d -0.0331/-0.0004  worstN -0.0331
+  w_uw=1.45  macro 0.5889/0.0144  d -0.0340/-0.0005  worstN -0.0340
+  w_uw=1.5  macro 0.5890/0.0144  d -0.0339/-0.0005  worstN -0.0339
+  -> best tick w_uw=0  d +0.0182/+0.0007
 
-# uw_window  base 0.6814/0.6354  (1s)
-  uw_window=2  macro 0.6814/0.6370  d +0.0000/+0.0016  worstN +0.0000 VOTE
-  uw_window=4  macro 0.6837/0.6379  d +0.0023/+0.0026  worstN +0.0023 VOTE
-  uw_window=6  macro 0.6835/0.6379  d +0.0020/+0.0025  worstN +0.0020 VOTE
-  uw_window=8  macro 0.6846/0.6393  d +0.0032/+0.0039  worstN +0.0032 VOTE
-  uw_window=10  macro 0.6817/0.6355  d +0.0003/+0.0001  worstN +0.0003 VOTE
-  uw_window=12  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  uw_window=16  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  uw_window=24  macro 0.6803/0.6349  d -0.0011/-0.0005  worstN -0.0011
-  uw_window=32  macro 0.6787/0.6329  d -0.0027/-0.0025  worstN -0.0027
-  uw_window=48  macro 0.6800/0.6356  d -0.0014/+0.0002  worstN -0.0014
-  uw_window=64  macro 0.6781/0.6328  d -0.0033/-0.0026  worstN -0.0033
-  uw_window=96  macro 0.6787/0.6329  d -0.0027/-0.0025  worstN -0.0027
-  -> best tick uw_window=8  d +0.0032/+0.0039
+# uw_window  base 0.6229/0.0148  (2s)
+  uw_window=2  macro 0.6235/0.0149  d +0.0007/+0.0000  worstN +0.0007 VOTE
+  uw_window=4  macro 0.6151/0.0147  d -0.0077/-0.0001  worstN -0.0077
+  uw_window=6  macro 0.6266/0.0150  d +0.0038/+0.0002  worstN +0.0038 VOTE
+  uw_window=8  macro 0.6248/0.0150  d +0.0019/+0.0002  worstN +0.0019 VOTE
+  uw_window=10  macro 0.6335/0.0150  d +0.0106/+0.0002  worstN +0.0106 VOTE
+  uw_window=12  macro 0.6296/0.0150  d +0.0068/+0.0001  worstN +0.0068 VOTE
+  uw_window=16  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  uw_window=24  macro 0.6157/0.0147  d -0.0071/-0.0001  worstN -0.0071
+  uw_window=32  macro 0.6233/0.0148  d +0.0004/-0.0000  worstN +0.0004
+  uw_window=48  macro 0.6352/0.0151  d +0.0123/+0.0003  worstN +0.0123 VOTE
+  uw_window=64  macro 0.6189/0.0145  d -0.0040/-0.0004  worstN -0.0040
+  uw_window=96  macro 0.6242/0.0146  d +0.0013/-0.0002  worstN +0.0013
+  -> best tick uw_window=48  d +0.0123/+0.0003
 
-# lead_w  base 0.6814/0.6354  (1s)
-  lead_w=0  macro 0.6763/0.6302  d -0.0051/-0.0051  worstN -0.0051
-  lead_w=0.05  macro 0.6765/0.6304  d -0.0049/-0.0050  worstN -0.0049
-  lead_w=0.1  macro 0.6802/0.6350  d -0.0012/-0.0004  worstN -0.0012
-  lead_w=0.15  macro 0.6801/0.6346  d -0.0013/-0.0008  worstN -0.0013
-  lead_w=0.2  macro 0.6816/0.6354  d +0.0002/-0.0000  worstN +0.0002
-  lead_w=0.22  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_w=0.25  macro 0.6822/0.6365  d +0.0008/+0.0011  worstN +0.0008 VOTE
-  lead_w=0.3  macro 0.6850/0.6402  d +0.0036/+0.0048  worstN +0.0036 VOTE
-  lead_w=0.35  macro 0.6852/0.6405  d +0.0038/+0.0051  worstN +0.0038 VOTE
-  lead_w=0.4  macro 0.6854/0.6407  d +0.0040/+0.0053  worstN +0.0040 VOTE
-  lead_w=0.45  macro 0.6860/0.6411  d +0.0046/+0.0057  worstN +0.0046 VOTE
-  lead_w=0.5  macro 0.6871/0.6426  d +0.0057/+0.0072  worstN +0.0057 VOTE
-  lead_w=0.55  macro 0.6884/0.6433  d +0.0070/+0.0079  worstN +0.0070 VOTE
-  lead_w=0.6  macro 0.6894/0.6442  d +0.0080/+0.0088  worstN +0.0080 VOTE
-  lead_w=0.65  macro 0.6885/0.6429  d +0.0071/+0.0075  worstN +0.0071 VOTE
-  lead_w=0.7  macro 0.6859/0.6403  d +0.0045/+0.0049  worstN +0.0045 VOTE
-  lead_w=0.75  macro 0.6874/0.6408  d +0.0060/+0.0054  worstN +0.0060 VOTE
-  lead_w=0.8  macro 0.6901/0.6438  d +0.0087/+0.0084  worstN +0.0087 VOTE
-  lead_w=0.85  macro 0.6902/0.6444  d +0.0087/+0.0090  worstN +0.0087 VOTE
-  lead_w=0.9  macro 0.6885/0.6424  d +0.0070/+0.0070  worstN +0.0070 VOTE
-  lead_w=0.95  macro 0.6909/0.6450  d +0.0095/+0.0096  worstN +0.0095 VOTE
-  lead_w=1  macro 0.6909/0.6450  d +0.0095/+0.0096  worstN +0.0095 VOTE
-  -> best tick lead_w=1  d +0.0095/+0.0096
+# lead_w  base 0.6229/0.0148  (0s)
+  lead_w=0  macro 0.6090/0.0144  d -0.0139/-0.0004  worstN -0.0139
+  lead_w=0.05  macro 0.6110/0.0145  d -0.0119/-0.0004  worstN -0.0119
+  lead_w=0.1  macro 0.6123/0.0145  d -0.0105/-0.0004  worstN -0.0105
+  lead_w=0.15  macro 0.6176/0.0147  d -0.0052/-0.0001  worstN -0.0052
+  lead_w=0.2  macro 0.6217/0.0147  d -0.0012/-0.0001  worstN -0.0012
+  lead_w=0.22  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_w=0.25  macro 0.6241/0.0150  d +0.0013/+0.0002  worstN +0.0013 VOTE
+  lead_w=0.3  macro 0.6227/0.0149  d -0.0002/+0.0001  worstN -0.0002
+  lead_w=0.35  macro 0.6236/0.0150  d +0.0008/+0.0002  worstN +0.0008 VOTE
+  lead_w=0.4  macro 0.6254/0.0150  d +0.0025/+0.0002  worstN +0.0025 VOTE
+  lead_w=0.45  macro 0.6308/0.0153  d +0.0080/+0.0005  worstN +0.0080 VOTE
+  lead_w=0.5  macro 0.6370/0.0156  d +0.0142/+0.0008  worstN +0.0142 VOTE
+  lead_w=0.55  macro 0.6363/0.0157  d +0.0135/+0.0009  worstN +0.0135 VOTE
+  lead_w=0.6  macro 0.6392/0.0159  d +0.0164/+0.0011  worstN +0.0164 VOTE
+  lead_w=0.65  macro 0.6443/0.0161  d +0.0214/+0.0013  worstN +0.0214 VOTE
+  lead_w=0.7  macro 0.6425/0.0160  d +0.0196/+0.0011  worstN +0.0196 VOTE
+  lead_w=0.75  macro 0.6460/0.0160  d +0.0232/+0.0012  worstN +0.0232 VOTE
+  lead_w=0.8  macro 0.6494/0.0162  d +0.0266/+0.0014  worstN +0.0266 VOTE
+  lead_w=0.85  macro 0.6464/0.0162  d +0.0236/+0.0014  worstN +0.0236 VOTE
+  lead_w=0.9  macro 0.6456/0.0162  d +0.0227/+0.0013  worstN +0.0227 VOTE
+  lead_w=0.95  macro 0.6490/0.0163  d +0.0261/+0.0014  worstN +0.0261 VOTE
+  lead_w=1  macro 0.6498/0.0163  d +0.0270/+0.0015  worstN +0.0270 VOTE
+  -> best tick lead_w=1  d +0.0270/+0.0015
 
-# lead_len  base 0.6814/0.6354  (0s)
-  lead_len=0  macro 0.6788/0.6335  d -0.0026/-0.0018  worstN -0.0026
-  lead_len=4  macro 0.6795/0.6346  d -0.0019/-0.0008  worstN -0.0019
-  lead_len=8  macro 0.6784/0.6326  d -0.0031/-0.0028  worstN -0.0031
-  lead_len=12  macro 0.6802/0.6337  d -0.0012/-0.0017  worstN -0.0012
-  lead_len=16  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_len=24  macro 0.6828/0.6373  d +0.0014/+0.0019  worstN +0.0014 VOTE
-  lead_len=32  macro 0.6805/0.6355  d -0.0009/+0.0002  worstN -0.0009
-  lead_len=48  macro 0.6811/0.6362  d -0.0003/+0.0009  worstN -0.0003
-  lead_len=64  macro 0.6822/0.6370  d +0.0008/+0.0017  worstN +0.0008 VOTE
-  lead_len=96  macro 0.6801/0.6342  d -0.0014/-0.0012  worstN -0.0014
-  -> best tick lead_len=24  d +0.0014/+0.0019
+# lead_len  base 0.6229/0.0148  (0s)
+  lead_len=0  macro 0.6081/0.0144  d -0.0147/-0.0005  worstN -0.0147
+  lead_len=4  macro 0.6136/0.0146  d -0.0092/-0.0002  worstN -0.0092
+  lead_len=8  macro 0.6182/0.0146  d -0.0047/-0.0002  worstN -0.0047
+  lead_len=12  macro 0.6244/0.0146  d +0.0015/-0.0002  worstN +0.0015
+  lead_len=16  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_len=24  macro 0.6243/0.0149  d +0.0014/+0.0001  worstN +0.0014 VOTE
+  lead_len=32  macro 0.6259/0.0150  d +0.0030/+0.0001  worstN +0.0030 VOTE
+  lead_len=48  macro 0.6209/0.0150  d -0.0020/+0.0001  worstN -0.0020
+  lead_len=64  macro 0.6173/0.0149  d -0.0056/+0.0000  worstN -0.0056
+  lead_len=96  macro 0.6073/0.0144  d -0.0156/-0.0004  worstN -0.0156
+  -> best tick lead_len=32  d +0.0030/+0.0001
 
-# lead_mu  base 0.6814/0.6354  (0s)
-  lead_mu=5  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=20  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=40  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=60  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=100  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=200  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=400  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=800  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  lead_mu=1600  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
+# lead_mu  base 0.6229/0.0148  (0s)
+  lead_mu=5  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=20  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=40  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=60  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=100  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=200  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=400  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=800  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  lead_mu=1600  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
 
-# len_prior  base 0.6814/0.6354  (1s)
-  len_prior=0  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  len_prior=0.05  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  len_prior=0.1  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  len_prior=0.15  macro 0.6818/0.6356  d +0.0004/+0.0002  worstN +0.0004 VOTE
-  len_prior=0.2  macro 0.6817/0.6355  d +0.0003/+0.0001  worstN +0.0003 VOTE
-  len_prior=0.25  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  len_prior=0.3  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  len_prior=0.35  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  len_prior=0.4  macro 0.6814/0.6353  d -0.0001/-0.0001  worstN -0.0001
-  len_prior=0.45  macro 0.6814/0.6353  d -0.0001/-0.0001  worstN -0.0001
-  len_prior=0.5  macro 0.6814/0.6353  d -0.0001/-0.0001  worstN -0.0001
-  len_prior=0.55  macro 0.6811/0.6351  d -0.0003/-0.0003  worstN -0.0003
-  len_prior=0.6  macro 0.6811/0.6351  d -0.0003/-0.0003  worstN -0.0003
-  len_prior=0.65  macro 0.6806/0.6344  d -0.0008/-0.0010  worstN -0.0008
-  len_prior=0.7  macro 0.6808/0.6347  d -0.0006/-0.0007  worstN -0.0006
-  len_prior=0.75  macro 0.6808/0.6347  d -0.0006/-0.0007  worstN -0.0006
-  len_prior=0.8  macro 0.6808/0.6347  d -0.0006/-0.0007  worstN -0.0006
-  len_prior=0.85  macro 0.6794/0.6340  d -0.0021/-0.0014  worstN -0.0021
-  len_prior=0.9  macro 0.6794/0.6340  d -0.0021/-0.0014  worstN -0.0021
-  len_prior=0.95  macro 0.6789/0.6334  d -0.0025/-0.0019  worstN -0.0025
-  len_prior=1  macro 0.6789/0.6334  d -0.0025/-0.0019  worstN -0.0025
-  len_prior=1.05  macro 0.6789/0.6334  d -0.0026/-0.0020  worstN -0.0026
-  len_prior=1.1  macro 0.6789/0.6334  d -0.0026/-0.0020  worstN -0.0026
-  len_prior=1.15  macro 0.6789/0.6334  d -0.0026/-0.0020  worstN -0.0026
-  len_prior=1.2  macro 0.6788/0.6333  d -0.0026/-0.0020  worstN -0.0026
-  -> best tick len_prior=0  d +0.0004/+0.0002
+# len_prior  base 0.6229/0.0148  (0s)
+  len_prior=0  macro 0.6215/0.0147  d -0.0013/-0.0001  worstN -0.0013
+  len_prior=0.05  macro 0.6227/0.0148  d -0.0002/-0.0001  worstN -0.0002
+  len_prior=0.1  macro 0.6239/0.0148  d +0.0010/-0.0001  worstN +0.0010
+  len_prior=0.15  macro 0.6243/0.0148  d +0.0015/-0.0000  worstN +0.0015
+  len_prior=0.2  macro 0.6235/0.0148  d +0.0006/-0.0000  worstN +0.0006
+  len_prior=0.25  macro 0.6240/0.0148  d +0.0011/+0.0000  worstN +0.0011 VOTE
+  len_prior=0.3  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  len_prior=0.35  macro 0.6217/0.0148  d -0.0012/-0.0000  worstN -0.0012
+  len_prior=0.4  macro 0.6229/0.0149  d -0.0000/+0.0000  worstN -0.0000
+  len_prior=0.45  macro 0.6206/0.0148  d -0.0022/-0.0001  worstN -0.0022
+  len_prior=0.5  macro 0.6206/0.0148  d -0.0022/-0.0001  worstN -0.0022
+  len_prior=0.55  macro 0.6198/0.0148  d -0.0031/-0.0000  worstN -0.0031
+  len_prior=0.6  macro 0.6211/0.0148  d -0.0018/-0.0000  worstN -0.0018
+  len_prior=0.65  macro 0.6201/0.0148  d -0.0028/-0.0001  worstN -0.0028
+  len_prior=0.7  macro 0.6204/0.0148  d -0.0025/-0.0001  worstN -0.0025
+  len_prior=0.75  macro 0.6195/0.0148  d -0.0034/-0.0001  worstN -0.0034
+  len_prior=0.8  macro 0.6193/0.0149  d -0.0036/+0.0000  worstN -0.0036
+  len_prior=0.85  macro 0.6192/0.0148  d -0.0037/+0.0000  worstN -0.0037
+  len_prior=0.9  macro 0.6191/0.0148  d -0.0038/+0.0000  worstN -0.0038
+  len_prior=0.95  macro 0.6202/0.0149  d -0.0027/+0.0000  worstN -0.0027
+  len_prior=1  macro 0.6210/0.0149  d -0.0018/+0.0001  worstN -0.0018
+  len_prior=1.05  macro 0.6202/0.0149  d -0.0027/+0.0001  worstN -0.0027
+  len_prior=1.1  macro 0.6205/0.0149  d -0.0024/+0.0001  worstN -0.0024
+  len_prior=1.15  macro 0.6204/0.0149  d -0.0025/+0.0001  worstN -0.0025
+  len_prior=1.2  macro 0.6206/0.0148  d -0.0023/+0.0000  worstN -0.0023
+  -> best tick len_prior=0.25  d +0.0011/+0.0000
 
-# bm25_w  base 0.6814/0.6354  (1s)
-  bm25_w=0  macro 0.6726/0.6251  d -0.0088/-0.0103  worstN -0.0088
-  bm25_w=0.2  macro 0.6768/0.6301  d -0.0046/-0.0053  worstN -0.0046
-  bm25_w=0.4  macro 0.6844/0.6392  d +0.0030/+0.0039  worstN +0.0030 VOTE
-  bm25_w=0.6  macro 0.6864/0.6409  d +0.0050/+0.0055  worstN +0.0050 VOTE
-  bm25_w=0.8  macro 0.6866/0.6420  d +0.0052/+0.0066  worstN +0.0052 VOTE
-  bm25_w=1  macro 0.6834/0.6376  d +0.0020/+0.0022  worstN +0.0020 VOTE
-  bm25_w=1.2  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  bm25_w=1.4  macro 0.6810/0.6358  d -0.0004/+0.0004  worstN -0.0004
-  bm25_w=1.6  macro 0.6807/0.6354  d -0.0007/+0.0000  worstN -0.0007
-  bm25_w=1.8  macro 0.6809/0.6357  d -0.0005/+0.0003  worstN -0.0005
-  bm25_w=2  macro 0.6798/0.6344  d -0.0016/-0.0010  worstN -0.0016
-  bm25_w=2.2  macro 0.6796/0.6342  d -0.0019/-0.0012  worstN -0.0019
-  bm25_w=2.4  macro 0.6792/0.6338  d -0.0022/-0.0015  worstN -0.0022
-  bm25_w=2.6  macro 0.6782/0.6322  d -0.0032/-0.0032  worstN -0.0032
-  bm25_w=2.8  macro 0.6781/0.6321  d -0.0033/-0.0033  worstN -0.0033
-  bm25_w=3  macro 0.6773/0.6302  d -0.0041/-0.0052  worstN -0.0041
-  bm25_w=3.2  macro 0.6767/0.6299  d -0.0047/-0.0054  worstN -0.0047
-  bm25_w=3.4  macro 0.6765/0.6297  d -0.0050/-0.0057  worstN -0.0050
-  bm25_w=3.6  macro 0.6759/0.6290  d -0.0055/-0.0064  worstN -0.0055
-  bm25_w=3.8  macro 0.6759/0.6290  d -0.0055/-0.0064  worstN -0.0055
-  bm25_w=4  macro 0.6759/0.6290  d -0.0055/-0.0064  worstN -0.0055
-  -> best tick bm25_w=0.8  d +0.0052/+0.0066
+# bm25_w  base 0.6229/0.0148  (0s)
+  bm25_w=0  macro 0.5998/0.0148  d -0.0231/+0.0000  worstN -0.0231
+  bm25_w=0.2  macro 0.6040/0.0147  d -0.0188/-0.0001  worstN -0.0188
+  bm25_w=0.4  macro 0.6099/0.0150  d -0.0129/+0.0002  worstN -0.0129
+  bm25_w=0.6  macro 0.6142/0.0150  d -0.0086/+0.0002  worstN -0.0086
+  bm25_w=0.8  macro 0.6207/0.0150  d -0.0022/+0.0002  worstN -0.0022
+  bm25_w=1  macro 0.6200/0.0148  d -0.0028/-0.0000  worstN -0.0028
+  bm25_w=1.2  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  bm25_w=1.4  macro 0.6223/0.0148  d -0.0005/-0.0000  worstN -0.0005
+  bm25_w=1.6  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  bm25_w=1.8  macro 0.6182/0.0146  d -0.0046/-0.0003  worstN -0.0046
+  bm25_w=2  macro 0.6200/0.0146  d -0.0029/-0.0002  worstN -0.0029
+  bm25_w=2.2  macro 0.6216/0.0146  d -0.0013/-0.0002  worstN -0.0013
+  bm25_w=2.4  macro 0.6218/0.0145  d -0.0010/-0.0003  worstN -0.0010
+  bm25_w=2.6  macro 0.6238/0.0146  d +0.0009/-0.0003  worstN +0.0009
+  bm25_w=2.8  macro 0.6245/0.0146  d +0.0017/-0.0002  worstN +0.0017
+  bm25_w=3  macro 0.6234/0.0146  d +0.0005/-0.0003  worstN +0.0005
+  bm25_w=3.2  macro 0.6219/0.0145  d -0.0009/-0.0003  worstN -0.0009
+  bm25_w=3.4  macro 0.6194/0.0145  d -0.0035/-0.0003  worstN -0.0035
+  bm25_w=3.6  macro 0.6194/0.0145  d -0.0034/-0.0003  worstN -0.0034
+  bm25_w=3.8  macro 0.6195/0.0145  d -0.0033/-0.0003  worstN -0.0033
+  bm25_w=4  macro 0.6195/0.0145  d -0.0034/-0.0003  worstN -0.0034
 
-# bm25_k1  base 0.6814/0.6354  (1s)
-  bm25_k1=0.2  macro 0.6782/0.6351  d -0.0032/-0.0003  worstN -0.0032
-  bm25_k1=0.4  macro 0.6797/0.6358  d -0.0017/+0.0004  worstN -0.0017
-  bm25_k1=0.6  macro 0.6786/0.6344  d -0.0028/-0.0010  worstN -0.0028
-  bm25_k1=0.8  macro 0.6826/0.6373  d +0.0012/+0.0019  worstN +0.0012 VOTE
-  bm25_k1=1  macro 0.6798/0.6343  d -0.0016/-0.0011  worstN -0.0016
-  bm25_k1=1.2  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  bm25_k1=1.4  macro 0.6813/0.6353  d -0.0002/-0.0001  worstN -0.0002
-  bm25_k1=1.6  macro 0.6824/0.6368  d +0.0010/+0.0014  worstN +0.0010 VOTE
-  bm25_k1=1.8  macro 0.6841/0.6377  d +0.0026/+0.0023  worstN +0.0026 VOTE
-  bm25_k1=2  macro 0.6841/0.6379  d +0.0027/+0.0025  worstN +0.0027 VOTE
-  bm25_k1=2.2  macro 0.6832/0.6367  d +0.0018/+0.0013  worstN +0.0018 VOTE
-  bm25_k1=2.4  macro 0.6826/0.6353  d +0.0012/-0.0001  worstN +0.0012
-  bm25_k1=2.6  macro 0.6816/0.6338  d +0.0002/-0.0016  worstN +0.0002
-  bm25_k1=2.8  macro 0.6806/0.6325  d -0.0008/-0.0029  worstN -0.0008
-  bm25_k1=3  macro 0.6805/0.6321  d -0.0009/-0.0033  worstN -0.0009
-  bm25_k1=3.2  macro 0.6785/0.6295  d -0.0029/-0.0059  worstN -0.0029
-  bm25_k1=3.4  macro 0.6771/0.6279  d -0.0043/-0.0075  worstN -0.0043
-  bm25_k1=3.6  macro 0.6774/0.6281  d -0.0041/-0.0073  worstN -0.0041
-  bm25_k1=3.8  macro 0.6766/0.6271  d -0.0048/-0.0082  worstN -0.0048
-  bm25_k1=4  macro 0.6749/0.6246  d -0.0065/-0.0108  worstN -0.0065
-  -> best tick bm25_k1=2  d +0.0027/+0.0025
+# bm25_k1  base 0.6229/0.0148  (0s)
+  bm25_k1=0.2  macro 0.5924/0.0143  d -0.0305/-0.0005  worstN -0.0305
+  bm25_k1=0.4  macro 0.6063/0.0146  d -0.0166/-0.0002  worstN -0.0166
+  bm25_k1=0.6  macro 0.6105/0.0147  d -0.0123/-0.0002  worstN -0.0123
+  bm25_k1=0.8  macro 0.6166/0.0148  d -0.0063/-0.0001  worstN -0.0063
+  bm25_k1=1  macro 0.6177/0.0147  d -0.0051/-0.0002  worstN -0.0051
+  bm25_k1=1.2  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  bm25_k1=1.4  macro 0.6235/0.0148  d +0.0006/-0.0000  worstN +0.0006
+  bm25_k1=1.6  macro 0.6269/0.0150  d +0.0040/+0.0001  worstN +0.0040 VOTE
+  bm25_k1=1.8  macro 0.6263/0.0150  d +0.0034/+0.0001  worstN +0.0034 VOTE
+  bm25_k1=2  macro 0.6264/0.0150  d +0.0035/+0.0002  worstN +0.0035 VOTE
+  bm25_k1=2.2  macro 0.6336/0.0152  d +0.0107/+0.0004  worstN +0.0107 VOTE
+  bm25_k1=2.4  macro 0.6347/0.0153  d +0.0118/+0.0005  worstN +0.0118 VOTE
+  bm25_k1=2.6  macro 0.6337/0.0152  d +0.0108/+0.0004  worstN +0.0108 VOTE
+  bm25_k1=2.8  macro 0.6343/0.0153  d +0.0115/+0.0005  worstN +0.0115 VOTE
+  bm25_k1=3  macro 0.6321/0.0154  d +0.0092/+0.0005  worstN +0.0092 VOTE
+  bm25_k1=3.2  macro 0.6316/0.0152  d +0.0087/+0.0004  worstN +0.0087 VOTE
+  bm25_k1=3.4  macro 0.6335/0.0153  d +0.0106/+0.0005  worstN +0.0106 VOTE
+  bm25_k1=3.6  macro 0.6374/0.0155  d +0.0146/+0.0007  worstN +0.0146 VOTE
+  bm25_k1=3.8  macro 0.6355/0.0155  d +0.0126/+0.0007  worstN +0.0126 VOTE
+  bm25_k1=4  macro 0.6392/0.0156  d +0.0164/+0.0008  worstN +0.0164 VOTE
+  -> best tick bm25_k1=4  d +0.0164/+0.0008
 
-# bm25_b  base 0.6814/0.6354  (1s)
-  bm25_b=0  macro 0.6817/0.6378  d +0.0003/+0.0024  worstN +0.0003 VOTE
-  bm25_b=0.1  macro 0.6814/0.6370  d +0.0000/+0.0016  worstN +0.0000 VOTE
-  bm25_b=0.2  macro 0.6805/0.6355  d -0.0009/+0.0001  worstN -0.0009
-  bm25_b=0.3  macro 0.6799/0.6344  d -0.0015/-0.0009  worstN -0.0015
-  bm25_b=0.4  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  bm25_b=0.5  macro 0.6836/0.6380  d +0.0022/+0.0026  worstN +0.0022 VOTE
-  bm25_b=0.6  macro 0.6858/0.6412  d +0.0043/+0.0058  worstN +0.0043 VOTE
-  bm25_b=0.7  macro 0.6848/0.6399  d +0.0034/+0.0045  worstN +0.0034 VOTE
-  bm25_b=0.8  macro 0.6856/0.6402  d +0.0042/+0.0048  worstN +0.0042 VOTE
-  bm25_b=0.9  macro 0.6848/0.6391  d +0.0034/+0.0037  worstN +0.0034 VOTE
-  bm25_b=1  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  bm25_b=1.1  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  bm25_b=1.2  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  bm25_b=1.3  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  bm25_b=1.4  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  bm25_b=1.5  macro 0.6853/0.6398  d +0.0039/+0.0044  worstN +0.0039 VOTE
-  -> best tick bm25_b=0.6  d +0.0043/+0.0058
+# bm25_b  base 0.6229/0.0148  (0s)
+  bm25_b=0  macro 0.6107/0.0146  d -0.0121/-0.0003  worstN -0.0121
+  bm25_b=0.1  macro 0.6140/0.0147  d -0.0089/-0.0002  worstN -0.0089
+  bm25_b=0.2  macro 0.6169/0.0147  d -0.0059/-0.0001  worstN -0.0059
+  bm25_b=0.3  macro 0.6177/0.0147  d -0.0051/-0.0002  worstN -0.0051
+  bm25_b=0.4  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  bm25_b=0.5  macro 0.6192/0.0148  d -0.0036/-0.0001  worstN -0.0036
+  bm25_b=0.6  macro 0.6137/0.0149  d -0.0092/+0.0000  worstN -0.0092
+  bm25_b=0.7  macro 0.6154/0.0150  d -0.0074/+0.0001  worstN -0.0074
+  bm25_b=0.8  macro 0.6125/0.0150  d -0.0103/+0.0002  worstN -0.0103
+  bm25_b=0.9  macro 0.6076/0.0148  d -0.0152/-0.0000  worstN -0.0152
+  bm25_b=1  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
+  bm25_b=1.1  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
+  bm25_b=1.2  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
+  bm25_b=1.3  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
+  bm25_b=1.4  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
+  bm25_b=1.5  macro 0.6000/0.0145  d -0.0229/-0.0004  worstN -0.0229
 
-# bm25_delta  base 0.6814/0.6354  (1s)
-  bm25_delta=0  macro 0.6837/0.6380  d +0.0023/+0.0026  worstN +0.0023 VOTE
-  bm25_delta=0.1  macro 0.6832/0.6375  d +0.0018/+0.0021  worstN +0.0018 VOTE
-  bm25_delta=0.2  macro 0.6816/0.6354  d +0.0002/+0.0000  worstN +0.0002
-  bm25_delta=0.25  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  bm25_delta=0.3  macro 0.6798/0.6343  d -0.0016/-0.0011  worstN -0.0016
-  bm25_delta=0.4  macro 0.6797/0.6342  d -0.0017/-0.0012  worstN -0.0017
-  bm25_delta=0.5  macro 0.6797/0.6340  d -0.0017/-0.0013  worstN -0.0017
-  bm25_delta=0.6  macro 0.6800/0.6339  d -0.0014/-0.0015  worstN -0.0014
-  bm25_delta=0.7  macro 0.6789/0.6330  d -0.0025/-0.0024  worstN -0.0025
-  bm25_delta=0.8  macro 0.6783/0.6330  d -0.0031/-0.0024  worstN -0.0031
-  bm25_delta=0.9  macro 0.6782/0.6329  d -0.0033/-0.0025  worstN -0.0033
-  bm25_delta=1  macro 0.6760/0.6311  d -0.0054/-0.0043  worstN -0.0054
-  bm25_delta=1.1  macro 0.6756/0.6307  d -0.0058/-0.0047  worstN -0.0058
-  bm25_delta=1.2  macro 0.6760/0.6312  d -0.0054/-0.0042  worstN -0.0054
-  bm25_delta=1.3  macro 0.6759/0.6311  d -0.0055/-0.0043  worstN -0.0055
-  bm25_delta=1.4  macro 0.6761/0.6313  d -0.0053/-0.0041  worstN -0.0053
-  bm25_delta=1.5  macro 0.6760/0.6313  d -0.0054/-0.0041  worstN -0.0054
-  bm25_delta=1.6  macro 0.6759/0.6312  d -0.0055/-0.0042  worstN -0.0055
-  bm25_delta=1.7  macro 0.6755/0.6305  d -0.0059/-0.0049  worstN -0.0059
-  bm25_delta=1.8  macro 0.6755/0.6306  d -0.0059/-0.0048  worstN -0.0059
-  bm25_delta=1.9  macro 0.6754/0.6305  d -0.0060/-0.0049  worstN -0.0060
-  bm25_delta=2  macro 0.6754/0.6305  d -0.0061/-0.0049  worstN -0.0061
-  -> best tick bm25_delta=0  d +0.0023/+0.0026
+# bm25_delta  base 0.6229/0.0148  (0s)
+  bm25_delta=0  macro 0.6218/0.0148  d -0.0011/+0.0000  worstN -0.0011
+  bm25_delta=0.1  macro 0.6244/0.0149  d +0.0016/+0.0001  worstN +0.0016 VOTE
+  bm25_delta=0.2  macro 0.6214/0.0148  d -0.0014/+0.0000  worstN -0.0014
+  bm25_delta=0.25  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  bm25_delta=0.3  macro 0.6242/0.0149  d +0.0013/+0.0001  worstN +0.0013 VOTE
+  bm25_delta=0.4  macro 0.6213/0.0147  d -0.0015/-0.0001  worstN -0.0015
+  bm25_delta=0.5  macro 0.6205/0.0148  d -0.0024/-0.0001  worstN -0.0024
+  bm25_delta=0.6  macro 0.6198/0.0147  d -0.0030/-0.0001  worstN -0.0030
+  bm25_delta=0.7  macro 0.6158/0.0146  d -0.0070/-0.0002  worstN -0.0070
+  bm25_delta=0.8  macro 0.6184/0.0147  d -0.0045/-0.0001  worstN -0.0045
+  bm25_delta=0.9  macro 0.6193/0.0147  d -0.0035/-0.0002  worstN -0.0035
+  bm25_delta=1  macro 0.6185/0.0147  d -0.0044/-0.0002  worstN -0.0044
+  bm25_delta=1.1  macro 0.6187/0.0147  d -0.0042/-0.0002  worstN -0.0042
+  bm25_delta=1.2  macro 0.6185/0.0147  d -0.0044/-0.0002  worstN -0.0044
+  bm25_delta=1.3  macro 0.6190/0.0147  d -0.0038/-0.0002  worstN -0.0038
+  bm25_delta=1.4  macro 0.6183/0.0146  d -0.0046/-0.0002  worstN -0.0046
+  bm25_delta=1.5  macro 0.6142/0.0146  d -0.0087/-0.0002  worstN -0.0087
+  bm25_delta=1.6  macro 0.6102/0.0145  d -0.0126/-0.0003  worstN -0.0126
+  bm25_delta=1.7  macro 0.6038/0.0143  d -0.0190/-0.0006  worstN -0.0190
+  bm25_delta=1.8  macro 0.6026/0.0143  d -0.0202/-0.0005  worstN -0.0202
+  bm25_delta=1.9  macro 0.5998/0.0142  d -0.0231/-0.0006  worstN -0.0231
+  bm25_delta=2  macro 0.6002/0.0143  d -0.0227/-0.0005  worstN -0.0227
+  -> best tick bm25_delta=0.1  d +0.0016/+0.0001
 
-# ax_b  base 0.6814/0.6354  (1s)
-  ax_b=0  macro 0.6801/0.6344  d -0.0013/-0.0010  worstN -0.0013
-  ax_b=0.1  macro 0.6802/0.6350  d -0.0013/-0.0004  worstN -0.0013
-  ax_b=0.2  macro 0.6807/0.6354  d -0.0007/-0.0000  worstN -0.0007
-  ax_b=0.3  macro 0.6822/0.6375  d +0.0007/+0.0021  worstN +0.0007 VOTE
-  ax_b=0.4  macro 0.6812/0.6361  d -0.0003/+0.0007  worstN -0.0003
-  ax_b=0.5  macro 0.6801/0.6344  d -0.0013/-0.0010  worstN -0.0013
-  ax_b=0.6  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  ax_b=0.7  macro 0.6816/0.6356  d +0.0001/+0.0002  worstN +0.0001 VOTE
-  ax_b=0.8  macro 0.6816/0.6357  d +0.0002/+0.0003  worstN +0.0002 VOTE
-  ax_b=0.9  macro 0.6816/0.6357  d +0.0002/+0.0003  worstN +0.0002 VOTE
-  ax_b=1  macro 0.6828/0.6372  d +0.0014/+0.0018  worstN +0.0014 VOTE
-  ax_b=1.1  macro 0.6828/0.6372  d +0.0014/+0.0018  worstN +0.0014 VOTE
-  ax_b=1.2  macro 0.6828/0.6373  d +0.0014/+0.0019  worstN +0.0014 VOTE
-  ax_b=1.3  macro 0.6827/0.6372  d +0.0013/+0.0018  worstN +0.0013 VOTE
-  ax_b=1.4  macro 0.6826/0.6370  d +0.0012/+0.0017  worstN +0.0012 VOTE
-  ax_b=1.5  macro 0.6826/0.6370  d +0.0012/+0.0017  worstN +0.0012 VOTE
-  ax_b=1.6  macro 0.6826/0.6370  d +0.0012/+0.0017  worstN +0.0012 VOTE
-  ax_b=1.7  macro 0.6824/0.6369  d +0.0010/+0.0015  worstN +0.0010 VOTE
-  ax_b=1.8  macro 0.6823/0.6368  d +0.0009/+0.0014  worstN +0.0009 VOTE
-  ax_b=1.9  macro 0.6825/0.6370  d +0.0011/+0.0016  worstN +0.0011 VOTE
-  ax_b=2  macro 0.6825/0.6370  d +0.0011/+0.0016  worstN +0.0011 VOTE
-  -> best tick ax_b=1.2  d +0.0014/+0.0019
+# ax_b  base 0.6229/0.0148  (0s)
+  ax_b=0  macro 0.6226/0.0149  d -0.0003/+0.0000  worstN -0.0003
+  ax_b=0.1  macro 0.6213/0.0149  d -0.0016/+0.0001  worstN -0.0016
+  ax_b=0.2  macro 0.6168/0.0148  d -0.0061/-0.0001  worstN -0.0061
+  ax_b=0.3  macro 0.6198/0.0148  d -0.0031/-0.0000  worstN -0.0031
+  ax_b=0.4  macro 0.6196/0.0148  d -0.0033/-0.0001  worstN -0.0033
+  ax_b=0.5  macro 0.6226/0.0149  d -0.0003/+0.0000  worstN -0.0003
+  ax_b=0.6  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  ax_b=0.7  macro 0.6217/0.0148  d -0.0012/-0.0000  worstN -0.0012
+  ax_b=0.8  macro 0.6217/0.0148  d -0.0012/-0.0000  worstN -0.0012
+  ax_b=0.9  macro 0.6209/0.0148  d -0.0020/-0.0000  worstN -0.0020
+  ax_b=1  macro 0.6208/0.0148  d -0.0021/-0.0000  worstN -0.0021
+  ax_b=1.1  macro 0.6219/0.0148  d -0.0009/-0.0000  worstN -0.0009
+  ax_b=1.2  macro 0.6190/0.0147  d -0.0039/-0.0001  worstN -0.0039
+  ax_b=1.3  macro 0.6179/0.0147  d -0.0050/-0.0002  worstN -0.0050
+  ax_b=1.4  macro 0.6172/0.0147  d -0.0057/-0.0002  worstN -0.0057
+  ax_b=1.5  macro 0.6173/0.0147  d -0.0056/-0.0002  worstN -0.0056
+  ax_b=1.6  macro 0.6176/0.0147  d -0.0053/-0.0001  worstN -0.0053
+  ax_b=1.7  macro 0.6167/0.0147  d -0.0061/-0.0001  worstN -0.0061
+  ax_b=1.8  macro 0.6173/0.0147  d -0.0056/-0.0001  worstN -0.0056
+  ax_b=1.9  macro 0.6172/0.0147  d -0.0057/-0.0001  worstN -0.0057
+  ax_b=2  macro 0.6170/0.0147  d -0.0059/-0.0001  worstN -0.0059
 
-# ax_k  base 0.6814/0.6354  (1s)
-  ax_k=0.05  macro 0.6756/0.6295  d -0.0058/-0.0059  worstN -0.0058
-  ax_k=0.1  macro 0.6751/0.6288  d -0.0063/-0.0066  worstN -0.0063
-  ax_k=0.15  macro 0.6748/0.6279  d -0.0066/-0.0075  worstN -0.0066
-  ax_k=0.2  macro 0.6749/0.6280  d -0.0065/-0.0074  worstN -0.0065
-  ax_k=0.25  macro 0.6788/0.6334  d -0.0026/-0.0020  worstN -0.0026
-  ax_k=0.3  macro 0.6810/0.6361  d -0.0005/+0.0008  worstN -0.0005
-  ax_k=0.35  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  ax_k=0.4  macro 0.6812/0.6338  d -0.0002/-0.0016  worstN -0.0002
-  ax_k=0.45  macro 0.6782/0.6278  d -0.0032/-0.0076  worstN -0.0032
-  ax_k=0.5  macro 0.6781/0.6254  d -0.0033/-0.0100  worstN -0.0033
-  ax_k=0.55  macro 0.6778/0.6253  d -0.0036/-0.0101  worstN -0.0036
-  ax_k=0.6  macro 0.6689/0.6128  d -0.0126/-0.0226  worstN -0.0126
-  ax_k=0.65  macro 0.6622/0.6078  d -0.0192/-0.0276  worstN -0.0192
-  ax_k=0.7  macro 0.6617/0.6065  d -0.0197/-0.0289  worstN -0.0197
-  ax_k=0.75  macro 0.6525/0.5957  d -0.0289/-0.0397  worstN -0.0289
-  ax_k=0.8  macro 0.6459/0.5887  d -0.0355/-0.0467  worstN -0.0355
-  ax_k=0.85  macro 0.6378/0.5788  d -0.0436/-0.0566  worstN -0.0436
-  ax_k=0.9  macro 0.6338/0.5752  d -0.0476/-0.0602  worstN -0.0476
-  ax_k=0.95  macro 0.6270/0.5674  d -0.0544/-0.0680  worstN -0.0544
-  ax_k=1  macro 0.6175/0.5570  d -0.0639/-0.0784  worstN -0.0639
-  ax_k=1.05  macro 0.6094/0.5465  d -0.0720/-0.0889  worstN -0.0720
-  ax_k=1.1  macro 0.6049/0.5400  d -0.0766/-0.0954  worstN -0.0766
-  ax_k=1.15  macro 0.5961/0.5307  d -0.0853/-0.1047  worstN -0.0853
-  ax_k=1.2  macro 0.5935/0.5283  d -0.0880/-0.1071  worstN -0.0880
-  ax_k=1.25  macro 0.5874/0.5241  d -0.0940/-0.1113  worstN -0.0940
-  ax_k=1.3  macro 0.5789/0.5170  d -0.1025/-0.1183  worstN -0.1025
-  ax_k=1.35  macro 0.5705/0.5106  d -0.1109/-0.1248  worstN -0.1109
-  ax_k=1.4  macro 0.5676/0.5070  d -0.1138/-0.1284  worstN -0.1138
-  ax_k=1.45  macro 0.5644/0.5041  d -0.1170/-0.1312  worstN -0.1170
-  ax_k=1.5  macro 0.5616/0.5008  d -0.1198/-0.1346  worstN -0.1198
+# ax_k  base 0.6229/0.0148  (0s)
+  ax_k=0.05  macro 0.6147/0.0148  d -0.0082/-0.0001  worstN -0.0082
+  ax_k=0.1  macro 0.6144/0.0147  d -0.0085/-0.0001  worstN -0.0085
+  ax_k=0.15  macro 0.6192/0.0148  d -0.0037/-0.0000  worstN -0.0037
+  ax_k=0.2  macro 0.6206/0.0148  d -0.0023/-0.0000  worstN -0.0023
+  ax_k=0.25  macro 0.6194/0.0148  d -0.0034/-0.0001  worstN -0.0034
+  ax_k=0.3  macro 0.6206/0.0148  d -0.0023/-0.0000  worstN -0.0023
+  ax_k=0.35  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  ax_k=0.4  macro 0.6231/0.0149  d +0.0003/+0.0000  worstN +0.0003
+  ax_k=0.45  macro 0.6260/0.0153  d +0.0031/+0.0005  worstN +0.0031 VOTE
+  ax_k=0.5  macro 0.6243/0.0153  d +0.0015/+0.0004  worstN +0.0015 VOTE
+  ax_k=0.55  macro 0.6272/0.0153  d +0.0043/+0.0005  worstN +0.0043 VOTE
+  ax_k=0.6  macro 0.6327/0.0155  d +0.0099/+0.0007  worstN +0.0099 VOTE
+  ax_k=0.65  macro 0.6340/0.0156  d +0.0112/+0.0008  worstN +0.0112 VOTE
+  ax_k=0.7  macro 0.6349/0.0157  d +0.0120/+0.0009  worstN +0.0120 VOTE
+  ax_k=0.75  macro 0.6272/0.0151  d +0.0044/+0.0003  worstN +0.0044 VOTE
+  ax_k=0.8  macro 0.6212/0.0148  d -0.0016/-0.0000  worstN -0.0016
+  ax_k=0.85  macro 0.6119/0.0145  d -0.0110/-0.0004  worstN -0.0110
+  ax_k=0.9  macro 0.5937/0.0138  d -0.0291/-0.0011  worstN -0.0291
+  ax_k=0.95  macro 0.5818/0.0135  d -0.0411/-0.0014  worstN -0.0411
+  ax_k=1  macro 0.5709/0.0132  d -0.0520/-0.0016  worstN -0.0520
+  ax_k=1.05  macro 0.5589/0.0127  d -0.0640/-0.0022  worstN -0.0640
+  ax_k=1.1  macro 0.5560/0.0124  d -0.0669/-0.0024  worstN -0.0669
+  ax_k=1.15  macro 0.5528/0.0124  d -0.0700/-0.0025  worstN -0.0700
+  ax_k=1.2  macro 0.5514/0.0123  d -0.0714/-0.0025  worstN -0.0714
+  ax_k=1.25  macro 0.5480/0.0122  d -0.0749/-0.0026  worstN -0.0749
+  ax_k=1.3  macro 0.5476/0.0121  d -0.0753/-0.0027  worstN -0.0753
+  ax_k=1.35  macro 0.5443/0.0120  d -0.0786/-0.0029  worstN -0.0786
+  ax_k=1.4  macro 0.5403/0.0117  d -0.0826/-0.0031  worstN -0.0826
+  ax_k=1.45  macro 0.5369/0.0116  d -0.0860/-0.0032  worstN -0.0860
+  ax_k=1.5  macro 0.5371/0.0115  d -0.0858/-0.0033  worstN -0.0858
+  -> best tick ax_k=0.7  d +0.0120/+0.0009
 
-# ax_c  base 0.6814/0.6354  (0s)
-  ax_c=0.25  macro 0.6817/0.6357  d +0.0003/+0.0003  worstN +0.0003 VOTE
-  ax_c=0.5  macro 0.6832/0.6377  d +0.0018/+0.0023  worstN +0.0018 VOTE
-  ax_c=1  macro 0.6814/0.6354  d +0.0000/+0.0000  worstN +0.0000
-  ax_c=1.5  macro 0.6811/0.6358  d -0.0003/+0.0004  worstN -0.0003
-  ax_c=2  macro 0.6808/0.6357  d -0.0006/+0.0003  worstN -0.0006
-  ax_c=3  macro 0.6806/0.6354  d -0.0008/-0.0000  worstN -0.0008
-  ax_c=4  macro 0.6808/0.6356  d -0.0006/+0.0002  worstN -0.0006
-  ax_c=6  macro 0.6795/0.6338  d -0.0019/-0.0016  worstN -0.0019
-  ax_c=8  macro 0.6809/0.6357  d -0.0005/+0.0003  worstN -0.0005
-  -> best tick ax_c=0.5  d +0.0018/+0.0023
+# ax_c  base 0.6229/0.0148  (0s)
+  ax_c=0.25  macro 0.6193/0.0148  d -0.0035/-0.0000  worstN -0.0035
+  ax_c=0.5  macro 0.6234/0.0148  d +0.0005/-0.0000  worstN +0.0005
+  ax_c=1  macro 0.6229/0.0148  d +0.0000/+0.0000  worstN +0.0000
+  ax_c=1.5  macro 0.6221/0.0148  d -0.0007/-0.0000  worstN -0.0007
+  ax_c=2  macro 0.6202/0.0147  d -0.0026/-0.0001  worstN -0.0026
+  ax_c=3  macro 0.6208/0.0148  d -0.0021/-0.0000  worstN -0.0021
+  ax_c=4  macro 0.6207/0.0149  d -0.0021/+0.0000  worstN -0.0021
+  ax_c=6  macro 0.6217/0.0149  d -0.0012/+0.0000  worstN -0.0012
+  ax_c=8  macro 0.6212/0.0149  d -0.0017/+0.0001  worstN -0.0017
 
 # coordinate
-r1 smoothing 2->0  0.6814/0.6354 -> 0.6864/0.6403
+r1 smoothing stay 2
 r1 jm_lambda stay 0.5
-r1 mu 100->25  0.6864/0.6403 -> 0.6873/0.6415
-r1 w_od 0.16->0.2  0.6873/0.6415 -> 0.6884/0.6431
-r1 w_uw stay 0.5
-r1 uw_window 16->4  0.6884/0.6431 -> 0.6910/0.6452
-r1 lead_w 0.22->0.5  0.6910/0.6452 -> 0.6919/0.6466
-r1 lead_len 16->24  0.6919/0.6466 -> 0.6927/0.6472
+r1 mu 100->8000  0.6229/0.0148 -> 0.6262/0.0148
+r1 w_od 0.16->0.2  0.6262/0.0148 -> 0.6270/0.0149
+r1 w_uw 0.5->0  0.6270/0.0149 -> 0.6377/0.0154
+r1 uw_window stay 16
+r1 lead_w 0.22->0.95  0.6377/0.0154 -> 0.6768/0.0174
+r1 lead_len stay 16
 r1 lead_mu stay 60
-r1 len_prior 0.3->0  0.6927/0.6472 -> 0.6953/0.6506
-r1 bm25_w stay 1.2
-r1 bm25_k1 stay 1.2
-r1 bm25_b 0.4->0.9  0.6953/0.6506 -> 0.6995/0.6545
-r1 bm25_delta stay 0.25
-r1 ax_b 0.6->0.2  0.6995/0.6545 -> 0.7014/0.6562
+r1 len_prior 0.3->1.2  0.6768/0.0174 -> 0.6824/0.0175
+r1 bm25_w 1.2->0.4  0.6824/0.0175 -> 0.6867/0.0176
+r1 bm25_k1 1.2->1  0.6867/0.0176 -> 0.6881/0.0177
+r1 bm25_b 0.4->0  0.6881/0.0177 -> 0.6939/0.0177
+r1 bm25_delta 0.25->0.2  0.6939/0.0177 -> 0.6952/0.0178
+r1 ax_b stay 0.6
 r1 ax_k stay 0.35
 r1 ax_c stay 1
-r2 smoothing stay 0
-r2 jm_lambda stay 0.5
-r2 mu stay 25
+r2 smoothing stay 2
+r2 jm_lambda 0.5->0.7  0.6952/0.0178 -> 0.6966/0.0179
+r2 mu stay 8000
 r2 w_od stay 0.2
-r2 w_uw stay 0.5
-r2 uw_window stay 4
-r2 lead_w stay 0.5
-r2 lead_len stay 24
+r2 w_uw stay 0
+r2 uw_window stay 16
+r2 lead_w stay 0.95
+r2 lead_len stay 16
 r2 lead_mu stay 60
-r2 len_prior stay 0
-r2 bm25_w stay 1.2
-r2 bm25_k1 stay 1.2
-r2 bm25_b stay 0.9
-r2 bm25_delta stay 0.25
-r2 ax_b stay 0.2
+r2 len_prior stay 1.2
+r2 bm25_w stay 0.4
+r2 bm25_k1 stay 1
+r2 bm25_b stay 0
+r2 bm25_delta stay 0.2
+r2 ax_b stay 0.6
 r2 ax_k stay 0.35
 r2 ax_c stay 1
-round 2 no move
 
 # final vs start point
-base macro 0.6814/0.6354
-tuned macro 0.7014/0.6562
-  scifact      0.6814/0.6354 -> 0.7014/0.6562  +0.0199/+0.0208
-CHANGED smoothing=0 mu=25 w_od=0.2 uw_window=4 lead_w=0.5 lead_len=24 len_prior=0 bm25_b=0.9 ax_b=0.2
-elapsed 34s
+base macro 0.6229/0.0148
+tuned macro 0.6966/0.0179
+  full         0.6229/0.0148 -> 0.6966/0.0179  +0.0738/+0.0030
+CHANGED jm_lambda=0.7 mu=8000 w_od=0.2 w_uw=0 lead_w=0.95 len_prior=1.2 bm25_w=0.4 bm25_k1=1 bm25_b=0 bm25_delta=0.2
+elapsed 18s
 wrote /Users/aditya/Desktop/classes/COL764-Assignment2/macro_tune_result.json
