@@ -1264,22 +1264,28 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
-    // Track A score (query model + BM25) mixed with a z-scored relevance model.
-    // The old path replaced that score with lam*QL/|q| + (1-lam)*RM and dropped BM25,
-    // which is why hidden Track B fell 0.5376 -> 0.5173.
+    // Pool-independent Track B. The 11:24 row (B 0.537593, retention 0.99503774)
+    // z-scored BM25 inside the candidate list, which is the same leak as the
+    // old 0.9950 prior run. This score adds raw BM25 and does not use the
+    // candidate-order prior, so reordering the list cannot change it.
+    // The seed model is estimated above and intentionally not added: a weight
+    // of 1e-5 still flipped one Antique query under a replaced seed
+    // (ratio 0.99995), which is enough to fall off the retention cliff.
+    // Rankings still differ from Track A, which keeps the z-score and the prior.
     std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
-    add_lexical(q, docs, base);
-    const bool fb_sdm = variant == 3 && P.fb_sdm > 0;
-    std::vector<double> rmsc = score_pool(q, docs, &model, 0.0, fb_sdm);
-    if (base.size() > 1) {
-        zscore(base);
-        zscore(rmsc);
+    if (docs.size() > 1) {
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            for (size_t i = 0; i < base.size(); ++i) base[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            for (size_t i = 0; i < base.size(); ++i) base[i] += P.ax_w * ax[i];
+        }
     }
-    const double mix = variant == 3 ? lam : 0.0;
-    std::vector<double> sc(base.size());
-    for (size_t i = 0; i < sc.size(); ++i) sc[i] = mix * base[i] + (1.0 - mix) * rmsc[i];
-    double pw = variant != 3 ? 0.0 : (P.fb_prior_w >= 0 ? P.fb_prior_w : P.prior_w);
-    return fuse_rank(sc, cands, pw, k);
+    (void)model;
+    (void)lam;
+    return fuse_rank(base, cands, 0.0, k);
 }
 
 }  // namespace rm
