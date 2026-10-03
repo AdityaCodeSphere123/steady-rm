@@ -1,14 +1,11 @@
 """
-One-parameter sweep, then a short coordinate pass, over SciFact only.
-Starts from the parameters currently in submission/feedback.py.
+One-parameter sweep, then a short coordinate pass, on SciFact only.
+A tick is kept only when both SciFact nDCG and MAP do not fall.
 
-Every knob that Track A reads is swept across its full legal range. lambda
-stays 1, so Track B stays equal to Track A. Knobs that only change the
-relevance model when lambda < 1 are left out: they cannot move this ranker.
-
-A full Cartesian product of these ticks is not runnable. Each tick is tried
-with every other knob held at the start point, then the improving ticks are
-walked together one knob at a time.
+Starts from the retention-safe point in submission/feedback.py.
+prior_w, bm25_z, pool_lambda, and lambda stay fixed. They read the
+candidate list or the seed. The other Track A knobs are swept past the
+old ranges.
 
 Writes macro_tune_out.txt in the repo root after every line, and
 macro_tune_result.json when it finishes.
@@ -35,13 +32,11 @@ def ticks(lo, hi, step):
     return [round(lo + i * step, 4) for i in range(n + 1)]
 
 
-# SciFact only. Its score mix is the closest local stand-in for the hidden set.
+# Trailing comma matters: ("scifact") is a string, not a one-item tuple.
 SETS = ("scifact",)
 WEIGHT = {"scifact": 1.0}
 
-# Start point: hidden 0.5376 / 0.4592 (mu=100, ax_b=0.6, ax_w=0, w_od=0.16, w_uw=0.5).
-# lambda stays 1. Do not copy a SciFact-only coordinate result onto the
-# submission unless both nDCG and MAP rise on the hidden set.
+# Retention-safe start. prior_w, bm25_z, pool_lambda, lambda_ are not in GRID.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
     smoothing=2, jm_lambda=0.5, mu=100, mu_factor=8, mu_min=250, mu_max=2500,
@@ -59,44 +54,26 @@ BASE = dict(
 # Tokenisation knobs are applied at prepare(), so each tick rebuilds the index.
 PREP = {"stemmer", "doc_stop", "mu_mode", "mu_loo_docs"}
 
-# Full range of every knob Track A reads. Enums list every legal value.
+# Movable knobs only. Ranges extend past the old caps.
+# Locked, not swept: prior_w=0, bm25_z=0, pool_lambda=1, lambda=1.
 GRID = [
-    ("stemmer", [0, 1, 2]),
-    ("doc_stop", [0, 1]),
-    ("query_stop", [0, 1, 2]),
-    ("qstop_min_len", [0, 1, 2, 3, 4, 5, 6, 8]),
-    ("qstop_list", [0, 1, 2, 3]),
-    ("qspell", [0, 1, 2]),
     ("smoothing", [0, 1, 2]),
-    ("jm_lambda", ticks(0.0, 0.95, 0.05)),
-    ("mu", [0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 4000]),
-    ("mu_factor", [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24]),
-    ("mu_min", [50, 100, 250, 500, 1000, 1500]),
-    ("mu_max", [800, 1500, 2500, 4000, 8000]),
-    ("mu_mode", [0, 1]),
-    ("mu_loo_scale", [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]),
-    ("mu_loo_docs", [500, 1000, 2500, 5000, 10000]),
-    ("w_od", ticks(0.0, 0.50, 0.05)),
-    ("w_uw", ticks(0.0, 0.50, 0.05)),
-    ("uw_window", [2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48]),
-    ("lead_w", ticks(0.0, 0.50, 0.02)),
-    ("lead_len", [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48]),
-    ("lead_mu", [5, 10, 20, 30, 40, 50, 60, 80, 100, 150, 200, 400]),
-    ("len_prior", ticks(0.0, 0.60, 0.05)),
-    ("longq_n", [0, 2, 4, 6, 8, 10, 12, 16, 20, 32]),
-    ("prior_w", ticks(0.0, 0.50, 0.02)),
-    ("prior_k", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 30, 40, 60]),
-    ("bm25_w", ticks(0.0, 2.0, 0.2)),
-    ("bm25_k1", ticks(0.2, 2.4, 0.2)),
-    ("bm25_b", ticks(0.0, 1.0, 0.1)),
-    ("bm25_delta", ticks(0.0, 1.0, 0.05)),
-    ("pool_lambda", ticks(0.0, 1.0, 0.05)),
-    ("pool_docs", [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]),
-    ("ranker", [0, 1]),
-    ("ax_b", ticks(0.1, 1.2, 0.1)),
-    ("ax_k", ticks(0.05, 1.0, 0.05)),
-    ("ax_c", [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]),
-    ("ax_w", ticks(0.0, 1.5, 0.15)),
+    ("jm_lambda", ticks(0.0, 1.0, 0.05)),
+    ("mu", [0, 25, 50, 100, 200, 400, 800, 1500, 2500, 4000, 8000]),
+    ("w_od", ticks(0.0, 1.0, 0.05)),
+    ("w_uw", ticks(0.0, 1.5, 0.05)),
+    ("uw_window", [2, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96]),
+    ("lead_w", ticks(0.0, 1.0, 0.05)),
+    ("lead_len", [0, 4, 8, 12, 16, 24, 32, 48, 64, 96]),
+    ("lead_mu", [5, 20, 40, 60, 100, 200, 400, 800, 1600]),
+    ("len_prior", ticks(0.0, 1.2, 0.05)),
+    ("bm25_w", ticks(0.0, 4.0, 0.2)),
+    ("bm25_k1", ticks(0.2, 4.0, 0.2)),
+    ("bm25_b", ticks(0.0, 1.5, 0.1)),
+    ("bm25_delta", ticks(0.0, 2.0, 0.1)),
+    ("ax_b", ticks(0.0, 2.0, 0.1)),
+    ("ax_k", ticks(0.05, 1.5, 0.05)),
+    ("ax_c", [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]),
 ]
 
 
@@ -178,10 +155,20 @@ def macro(tab):
             sum(WEIGHT[s] * v[1] for s, v in tab.items()) / w)
 
 
+def both_vote(tab, ctab, names):
+    """Both datasets must keep nDCG and MAP. Equal weight is applied by macro()."""
+    for s in names:
+        if tab[s][0] < ctab[s][0] - 1e-9 or tab[s][1] < ctab[s][1] - 1e-9:
+            return False
+    return True
+
+
 def main():
     os.chdir(ROOT)
     open(OUT, "w").close()
     names, data = load_sets()
+    if not names:
+        raise SystemExit("no datasets loaded")
     cur = dict(BASE)
     log("datasets " + " ".join(f"{n}:{len(data[n][2])} w={WEIGHT[n]:g}" for n in names))
     log("base " + " ".join(f"{k}={cur[k]:g}" for k, _ in GRID))
@@ -204,14 +191,15 @@ def main():
             n, m = macro(tabs[v])
             worst = min(tabs[v][s][0] - ctab[s][0] for s in names)
             flag = ""
-            if v != float(cur[key]) and n >= cn - 1e-9 and m >= cm - 1e-9 and (n - cn) + (m - cm) >= 0.0003 and worst >= -0.008:
-                flag = " KEEP"
+            if v != float(cur[key]) and both_vote(tabs[v], ctab, names) and (n - cn) + (m - cm) >= 0.0003:
+                flag = " VOTE"
                 rec = ((n - cn) + (m - cm), v, n, m, worst)
                 if best is None or rec[0] > best[0]:
                     best = rec
             log(f"  {key}={v:g}  macro {n:.4f}/{m:.4f}  d {n-cn:+.4f}/{m-cm:+.4f}  worstN {worst:+.4f}{flag}")
             phase1.append({"param": key, "value": v, "ndcg": n, "map": m,
-                           "d_ndcg": n - cn, "d_map": m - cm, "worst_ndcg": worst})
+                           "d_ndcg": n - cn, "d_map": m - cm, "worst_ndcg": worst,
+                           "vote": flag == " VOTE"})
         if best:
             log(f"  -> best tick {key}={best[1]:g}  d {best[2]-cn:+.4f}/{best[3]-cm:+.4f}")
 
@@ -230,11 +218,9 @@ def main():
             best_v, best = float(cur[key]), (cn, cm, ctab)
             for v, tab in tabs.items():
                 n, m = macro(tab)
-                if n < cn - 1e-9 or m < cm - 1e-9:
+                if not both_vote(tab, ctab, names):
                     continue
                 if (n - cn) + (m - cm) < 0.0004:
-                    continue
-                if any(tab[s][0] < ctab[s][0] - 0.008 for s in names):
                     continue
                 if n + m > best[0] + best[1] + 1e-12:
                     best_v, best = float(v), (n, m, tab)
@@ -277,8 +263,8 @@ def main():
     log("CHANGED " + " ".join(f"{k}={v:g}" for k, v in changed.items()))
     log(f"elapsed {time.perf_counter()-t0:.0f}s")
     with open(RESULT, "w") as fh:
-        json.dump({"changed": changed, "accepted": accepted, "phase1_keeps": [
-            r for r in phase1 if r["d_ndcg"] >= -1e-9 and r["d_map"] >= -1e-9 and r["d_ndcg"] + r["d_map"] >= 0.0003
+        json.dump({"changed": changed, "accepted": accepted, "phase1_votes": [
+            r for r in phase1 if r["vote"]
         ]}, fh, indent=2)
     log(f"wrote {RESULT}")
 

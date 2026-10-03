@@ -57,6 +57,12 @@ _FLAG_SETS = [
 # inside the candidate pool). A reordered candidate list no longer changes the ranking.
 # 3 Oct 01:02: C=1, A 0.5327 / 0.4553, final 0.6733 rank 2. lead_len 8 -> 16 to
 # lift nDCG/MAP without touching the pool prior. lead_len=6 missed earlier.
+# 3 Oct 01:33: lead_len=16 is rank 1, A 0.5328 / 0.4554, C=1, final 0.7317.
+# jm_lambda=0.95 raised A to 0.5331 / 0.4558 and the column still showed C=1.0000,
+# but the unrounded ratio was below 1 at the 5th decimal, so the percentile fell
+# and final went 0.7317 -> 0.6656. Restored jm_lambda=0.5.
+# smoothing=0 is the 02:23 row: A 0.530985 / 0.454785, C=1, final 0.6986.
+# SciFact liked it. Hidden nDCG fell. mu=25 and w_od=0.2 also lose Antique and FiQA.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
