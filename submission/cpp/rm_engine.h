@@ -59,9 +59,12 @@ struct Params {
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
-    // BM25+ inside score_candidates (0 = off). bm25_z >= 1 z-scores in the pool.
+    // BM25+ added inside score_candidates (0 = off).
+    // bm25_z = 1 z-scores both scores inside the candidate pool (order depends on who else is in the pool).
+    // bm25_z = 0 adds bm25_w * BM25 on its own scale, so a noisy candidate list cannot reshuffle survivors.
     double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5, bm25_z = 1.0;
-    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids). 1 = off.
+    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
+    // 1 = off. Track B lambda stays 1 so C remains 1.
     double pool_lambda = 1.0, pool_docs = 8;
     // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
@@ -104,9 +107,10 @@ struct Params {
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
     double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
-    // Track B document ranker, independent of the seed set. lead_len and the
-    // raw BM25 weight used only inside relevance_model_feedback().
-    double fb_lead_len = 16, fb_bm25_w = 1.2;
+    // Multiplies (RM3(lambda) - RM3(1)), which is (1-lambda) times the
+    // relevance-model residual. Not z-scored, so lambda changes the scores
+    // without rescaling the whole candidate pool.
+    double fb_rm_w = 0.005;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 

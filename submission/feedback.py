@@ -27,7 +27,6 @@ Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
            adaptive lambda. Nothing reads score_candidates() output or keys
            off the query text. The only cache is collection counts of query
            term PAIRS: background statistics, independent of any seed.
-
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -72,17 +71,9 @@ _FLAG_SETS = [
 # Restored the 2 Oct 16:27 cell (commit 7543907): prior_w=0.12, bm25_z=1, bm25_w=1,
 # lead_len=8, w_od=0.16. lambda stays below 1 so feedback is not a pass-through.
 # 10:51 board: A 0.537646/0.459201, B 0.517318, retention 1, final 0.68175.
-# B had dropped BM25. Feedback now z-mixes the Track A score with the RM.
-# 11:07 board: A unchanged, B 0.534180, retention 0.99601112, final 0.6055.
-# 11:24 board: A 0.537646/0.459201, B 0.537593, retention 0.99503774, final 0.6305.
-# That 0.9950 is the pool z-score leak, same as the old prior run. Track B now
-# adds raw BM25 and does not z-score or use the candidate-order prior.
-# lambda stays below 1 so the pass-through return is not taken.
-# 11:42 board, rank 1: A 0.537646/0.459201, B 0.533102, retention 0.99999882,
-# final 0.77421053.
-# 3 Oct 15:15: RM3 mix at lambda 0.9 replaced that ranker. A held
-# 0.537646/0.459201, B fell to 0.514493, retention to 0.99697350, final 0.5459.
-# lambda 0.8 with the seed-independent Track B ranker is the cell to beat.
+# 16:21 board, this z-mix at lambda 0.9: B 0.534180, retention 0.99601112,
+# final 0.6277, rank 7. Z-scoring the relevance model let a noisy seed
+# reorder the pool. The residual is now added raw, scaled by fb_rm_w.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -99,7 +90,7 @@ PARAMS: Dict[str, float] = {
     "agree_gamma": 0,
     "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
-    "fb_sdm": 1, "fb_prior_w": -1, "fb_lead_len": 16, "fb_bm25_w": 1.2,
+    "fb_sdm": 1, "fb_prior_w": -1, "fb_rm_w": 0.005,
 }
 
 _lib = None

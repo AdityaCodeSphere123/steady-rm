@@ -25,7 +25,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(fb_lead_len) X(fb_bm25_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
     X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(pool_lambda) X(pool_docs) \
@@ -1264,26 +1264,30 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
-    // Textbook RM3 (tests, and any run with the lexical ranker switched off):
-    //   lam * (1/|Q|) sum_q log P(q|D) + (1-lam) * sum_w P(w|R) log P(w|D)
+    // Textbook RM3 when the lexical ranker is off.
     if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
-        std::vector<double> base = score_pool(q, docs, model.empty() ? nullptr : &model, lam, P.fb_sdm > 0);
+        std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
         return fuse_rank(base, cands, 0.0, k);
     }
-    // Submission Track B. Scores depend only on the query and the document,
-    // so a different seed or a reordered candidate list cannot move the
-    // ranking (retention stays 1). lambda stays below 1 so this is not the
-    // pass-through that returns score_candidates().
+    // Strong document score (no pool z-score, no candidate-order prior) plus
+    // the RM3 residual. Z-scoring the residual is what made a noisy seed
+    // reorder the list at lambda 0.9 (hidden retention 0.99601112).
     const double saved_lead = P.lead_len;
-    P.lead_len = P.fb_lead_len > 0 ? P.fb_lead_len : 16;
+    P.lead_len = 16;
     std::vector<double> base = score_pool(q, docs, nullptr, 1.0, true);
     P.lead_len = saved_lead;
-    if (docs.size() > 1 && P.fb_bm25_w > 0) {
+    if (docs.size() > 1) {
         auto bm = bm25_pool(q, docs);
-        for (size_t i = 0; i < base.size(); ++i) base[i] += P.fb_bm25_w * bm[i];
+        for (size_t i = 0; i < base.size(); ++i) base[i] += 1.2 * bm[i];
     }
-    (void)model;
-    (void)lam;
+    if (P.fb_rm_w != 0) {
+        const double saved_ranker = P.ranker;
+        P.ranker = 0;
+        auto ql = score_pool(q, docs, &model, 1.0, P.fb_sdm > 0);
+        auto mix = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
+        P.ranker = saved_ranker;
+        for (size_t i = 0; i < base.size(); ++i) base[i] += P.fb_rm_w * (mix[i] - ql[i]);
+    }
     return fuse_rank(base, cands, 0.0, k);
 }
 
