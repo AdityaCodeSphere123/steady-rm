@@ -1213,19 +1213,26 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
-    if (q.terms.empty()) return pool_order(cands, k);
+    if (q.terms.empty()) {
+        std::vector<int32_t> order(cands.size());
+        for (size_t i = 0; i < cands.size(); ++i) order[i] = static_cast<int32_t>(i);
+        std::sort(order.begin(), order.end(), [&](int32_t a, int32_t b) { return cands[a] < cands[b]; });
+        std::vector<Ranked> out;
+        size_t kk = std::min<size_t>(cands.size(), k < 0 ? 0 : static_cast<size_t>(k));
+        for (size_t i = 0; i < kk; ++i) out.push_back({order[i], -static_cast<double>(i)});
+        return out;
+    }
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     const int variant = static_cast<int>(P.rm_variant);
     auto seed = seed_weights(q, seeds, s);
-    if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback: exactly QL
-    auto model = estimate(q, seed, variant, s);
-    if (model.empty()) return score_candidates(query, cands, k);
+    std::vector<std::pair<uint32_t, double>> model;
+    if (!seed.empty()) model = estimate(q, seed, variant, s);
+    if (P.lambda >= 1) return score_candidates(query, cands, k);
 
     double lam, coh = 0, clar = 0;
-    if (variant != 3) lam = 0.0;                        // pure RM1 / RM2 ranking
-    else if (P.lambda >= 1) return score_candidates(query, cands, k);  // Track B == Track A
+    if (variant != 3) lam = 0.0;
     else if (P.lambda >= 0) lam = std::min(1.0, P.lambda);
     else {
         coh = coherence(seed, s);
