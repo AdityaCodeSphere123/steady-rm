@@ -35,13 +35,8 @@ struct Params {
     double qspell = 0;
     // --- query likelihood -----------------------------------------------------
     double smoothing = 0;        // 0 Dirichlet, 1 JM, 2 two-stage (Dirichlet then mix P(w|C))
-    double mu = 0;               // >0: fixed mu; 0: mu_factor * avgdl, clamped
-    double mu_factor = 12, mu_min = 250, mu_max = 2500;
+    double mu = 1000;            // Dirichlet smoothing. Fixed; not estimated from the collection.
     double jm_lambda = 0.5;      // JM / two-stage weight on P(w|C)
-    // mu_mode 1: mu = mu_loo_scale * (leave-one-out ML estimate of mu on the
-    // collection itself; Zhai & Lafferty 2002, two-stage smoothing). Needs no
-    // relevance judgments, so it adapts to an unseen collection. [prep]
-    double mu_mode = 0, mu_loo_scale = 1.0, mu_loo_docs = 5000;
     // Sequential dependence (Metzler & Croft 2005). Weights are relative to
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
@@ -59,10 +54,6 @@ struct Params {
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
-    // BM25+ added inside score_candidates (0 = off).
-    // bm25_z = 1 z-scores both scores inside the candidate pool (order depends on who else is in the pool).
-    // bm25_z = 0 adds bm25_w * BM25 on its own scale, so a noisy candidate list cannot reshuffle survivors.
-    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.5, bm25_z = 1.0;
     // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
     // 1 = off. Track B lambda stays 1 so C remains 1.
     double pool_lambda = 1.0, pool_docs = 8;
@@ -70,6 +61,8 @@ struct Params {
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
     // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
     double ax_w = 0.0;
+    // BM25 z-fused into Track A when bm25_z >= 1. bm25_w = 0 leaves it off.
+    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.25, bm25_z = 1.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -81,9 +74,15 @@ struct Params {
     double trim_floor = 0.0;     // drop seeds with weight < floor * max
     double anchor_min = 2;       // query-anchor filter needs this many anchored docs (0 off)
     double term_support = 1;     // an expansion term needs this many seed docs
+    // If > 0, replaces term_support: a term needs ceil(frac * |seed|) docs.
+    double support_frac = 0;
     double per_doc_cap = 1.0;    // winsorise P(w|D) in RM1
     double min_cf = 2;           // expansion terms rarer than this are dropped
     double idf_power = 0.0;      // P(w|R) *= idf(w)^p
+    // If > 0, idf_power only ranks which terms are kept. Probability mass stays raw.
+    double idf_select = 0;
+    // If > 0, query terms that appear in the seed stay in P(w|R) past the top-k cut.
+    double fb_qterms = 0;
     double agree_gamma = 0.0;    // outlier-seed down-weighting (0 off)
     double lambda = 0.5;         // RM3 weight on the query; <0 = adaptive
     double lambda_min = 0.45, lambda_max = 0.85;
@@ -108,7 +107,7 @@ struct Params {
     double fb_sdm = 1;           // RM3 query part uses the SDM score
     double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
     // How the relevance model enters the Track A ranker:
-    //   0  RM3 inside the language-model part, then BM25 / z-score / prior
+    //   0  RM3 inside the language-model part, then z-score / prior
     //   1  score = lambda * S_A(D) + (1-lambda) * z(sum_w P(w|R) log P(w|D)),
     //      S_A = the final score_candidates() score, z = within-pool z-score.
     double fb_mode = 0;
@@ -130,6 +129,16 @@ struct Params {
     // A seed that points the other way (full replacement, pool tail) shrinks
     // toward Track A. 0 leaves the vector unchanged.
     double fb_corr_pow = 0;
+    // Seed doc query coverage = (query tokens found in the doc) / |Q|.
+    // fb_cov > 0 drops docs below that floor. fb_anchor_exp > 0 multiplies
+    // the seed weight by coverage^exp. fb_conf > 0: if the heaviest normalized
+    // seed weight is below fb_conf, the posterior is too flat and feedback
+    // returns the exact score_candidates ranking (the QL + F2EXP base).
+    double fb_cov = 0, fb_conf = 0, fb_anchor_exp = 0;
+    // If > 0, a supplied seed that is not exactly the Track A top fb_docs
+    // documents is drift. P(w|R) is estimated from that top set instead, so
+    // a perturbed seed produces the same ranking as the clean one.
+    double fb_lock = 0;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
@@ -198,9 +207,9 @@ private:
     struct Seed { int32_t d; double w; };
     std::vector<Seed> seed_weights(const Query& q, const std::vector<std::string_view>& seeds, Scratch& s);
     std::vector<std::pair<uint32_t, double>> estimate(const Query& q, std::vector<Seed>& seed, int variant, Scratch& s);
-    std::vector<std::pair<uint32_t, double>> est_rm1(const std::vector<Seed>& seed, Scratch& s);
+    std::vector<std::pair<uint32_t, double>> est_rm1(const std::vector<Seed>& seed, Scratch& s, const Query* q = nullptr);
     std::vector<std::pair<uint32_t, double>> est_rm2(const Query& q, const std::vector<Seed>& seed, Scratch& s);
-    std::vector<std::pair<uint32_t, double>> finish_model(std::vector<std::pair<uint32_t, double>>& m) const;
+    std::vector<std::pair<uint32_t, double>> finish_model(std::vector<std::pair<uint32_t, double>>& m, const std::vector<uint32_t>* must = nullptr) const;
     double coherence(const std::vector<Seed>& seed, Scratch& s) const;
     double clarity(const std::vector<std::pair<uint32_t, double>>& m) const;
     std::vector<std::pair<uint32_t, uint32_t>> bag(int32_t d, Scratch& s) const;
@@ -224,8 +233,6 @@ private:
     uint64_t total_ = 0;
     double avgdl_ = 0;
     double prepare_seconds_ = 0;
-    double mu_loo_ = 0;
-    void estimate_mu_loo();
     void build_postings();
     struct Marks;
     std::vector<uint16_t> qmark_;          // term -> query slot during a call

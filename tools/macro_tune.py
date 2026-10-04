@@ -3,7 +3,7 @@ One-parameter sweep, then a short coordinate pass, on SciFact only.
 A tick is kept only when both SciFact nDCG and MAP do not fall.
 
 Starts from the retention-safe point in submission/feedback.py.
-prior_w, bm25_z, pool_lambda, and lambda stay fixed. They read the
+prior_w, pool_lambda, and lambda stay fixed. They read the
 candidate list or the seed. The other Track A knobs are swept past the
 old ranges.
 
@@ -36,26 +36,24 @@ def ticks(lo, hi, step):
 SETS = ("scifact",)
 WEIGHT = {"scifact": 1.0}
 
-# Retention-safe start. prior_w, bm25_z, pool_lambda, lambda_ are not in GRID.
+# Retention-safe start. prior_w, pool_lambda, lambda_ are not in GRID.
 BASE = dict(
     stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=2, jm_lambda=0.5, mu=100, mu_factor=8, mu_min=250, mu_max=2500,
-    mu_mode=1, mu_loo_scale=1.0, mu_loo_docs=5000,
+    smoothing=2, jm_lambda=0.5, mu=500,
     w_od=0.16, w_uw=0.5, uw_window=16,
     lead_w=0.22, lead_len=16, lead_mu=60,
     len_prior=0.3, longq_n=0,
     prior_w=0.0, prior_k=7,
-    bm25_w=1.2, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25, bm25_z=0.0,
     pool_lambda=1.0, pool_docs=8,
     ranker=1, ax_b=0.6, ax_k=0.35, ax_c=1.0, ax_w=0.0,
     lambda_=1.0,
 )
 
 # Tokenisation knobs are applied at prepare(), so each tick rebuilds the index.
-PREP = {"stemmer", "doc_stop", "mu_mode", "mu_loo_docs"}
+PREP = {"stemmer", "doc_stop"}
 
 # Movable knobs only. Ranges extend past the old caps.
-# Locked, not swept: prior_w=0, bm25_z=0, pool_lambda=1, lambda=1.
+# Locked, not swept: prior_w=0, pool_lambda=1, lambda=1.
 GRID = [
     ("smoothing", [0, 1, 2]),
     ("jm_lambda", ticks(0.0, 1.0, 0.05)),
@@ -67,10 +65,6 @@ GRID = [
     ("lead_len", [0, 4, 8, 12, 16, 24, 32, 48, 64, 96]),
     ("lead_mu", [5, 20, 40, 60, 100, 200, 400, 800, 1600]),
     ("len_prior", ticks(0.0, 1.2, 0.05)),
-    ("bm25_w", ticks(0.0, 4.0, 0.2)),
-    ("bm25_k1", ticks(0.2, 4.0, 0.2)),
-    ("bm25_b", ticks(0.0, 1.5, 0.1)),
-    ("bm25_delta", ticks(0.0, 2.0, 0.1)),
     ("ax_b", ticks(0.0, 2.0, 0.1)),
     ("ax_k", ticks(0.05, 1.5, 0.05)),
     ("ax_c", [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]),
