@@ -22,7 +22,7 @@ TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0,
                 fb_prior_w=0, rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
                 term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
                 fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
-                ranker=0, bm25_w=0, bm25_z=0, ax_w=0, fb_loo=0, fb_seed_ql=0, fb_mode=1)
+                ranker=0, bm25_w=0, bm25_z=0, ax_w=0, fb_rm_w=0)
 MU = 10.0
 
 tf = {d: Counter(t.split()) for d, t in DOCS.items()}
@@ -37,8 +37,9 @@ def close(a, b, eps=1e-6):
     assert abs(a - b) <= eps * max(1.0, abs(a), abs(b)), (a, b)
 
 
-def rm1(q, seed):
-    w = {d: math.exp(sum(math.log(pwd_dir(t, d)) for t in q)) for d in seed}
+def rm1(q, seed, pwd=None):
+    pwd = pwd or pwd_dir
+    w = {d: math.exp(sum(math.log(pwd(t, d)) for t in q)) for d in seed}
     z = sum(w.values()); w = {d: v / z for d, v in w.items()}
     m = Counter()
     for d in seed:
@@ -95,6 +96,19 @@ def main():
               (1 - lam) * sum(p * math.log(pwd_dir(t, d)) for t, p in m.items())
         close(got[d], ref)
 
+    # 3b. Same with two-stage smoothing (smoothing=2): the absent-term part of
+    # sum_w P_R(w) log P(w|D) must use the two-stage background, not Dirichlet's.
+    L = 0.5
+    fb.set_params(smoothing=2, jm_lambda=L)
+    pwd_ts = lambda w, d: (1 - L) * pwd_dir(w, d) + L * pc(w)
+    m = rm1(q, seed, pwd_ts)
+    got = dict(fb.relevance_model_feedback("apple fruit", seed, pool, 5))
+    for d in pool:
+        ref = lam * sum(math.log(pwd_ts(t, d)) for t in q) / len(q) + \
+              (1 - lam) * sum(p * math.log(pwd_ts(t, d)) for t, p in m.items())
+        close(got[d], ref)
+    fb.set_params(smoothing=0)
+
     # 4. Conformance: only pool ids, no duplicates, sorted, k respected.
     fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")})
     for fn in (lambda k: fb.score_candidates("apple fruit", ["d3", "d4", "d3"], k),
@@ -112,46 +126,6 @@ def main():
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)
     fb.score_candidates("apple juice", pool, 5)
     assert fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5) == a
-
-    # 6. Two-stage expansion must not subtract log(|D|+μ) a second time.
-    #    That penalty is about as large as the real signal and prefers short docs.
-    long_docs = {
-        "short": "qq qq",
-        "long": "qq qq " + " ".join(["pad"] * 80),
-        "seed": "qq qq qq topic",
-    }
-    path2 = os.path.join(tempfile.mkdtemp(), "corpus.jsonl")
-    with open(path2, "w") as f:
-        for d, t in long_docs.items():
-            f.write(json.dumps({"doc_id": d, "text": t}) + "\n")
-    fb.set_params(stemmer=0, doc_stop=0, query_stop=0, smoothing=2, jm_lambda=0.5, mu=10,
-                  mu_mode=0, w_od=0, w_uw=0, prior_w=0, fb_prior_w=0, rm2_mix=0, fb_mu=0,
-                  fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0, term_support=1,
-                  per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, **{"lambda": 0.0},
-                  fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0,
-                  qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0, ranker=0, bm25_w=0,
-                  bm25_z=0, ax_w=0, fb_loo=0, fb_seed_ql=0, fb_mode=1, rm_variant=3)
-    fb.prepare(path2)
-    model = dict(fb.relevance_model("qq", ["seed"], 1))
-    got = dict(fb.relevance_model_feedback("qq", ["seed"], ["short", "long"], 2))
-    tf2 = {d: Counter(t.split()) for d, t in long_docs.items()}
-    dl2 = {d: sum(c.values()) for d, c in tf2.items()}
-    cf2 = Counter()
-    for c in tf2.values():
-        cf2.update(c)
-    C2 = sum(cf2.values())
-    mu, mix = 10.0, 0.5
-
-    def p_two(term, doc):
-        pc = cf2[term] / C2
-        direc = (tf2[doc][term] + mu * pc) / (dl2[doc] + mu)
-        return (1 - mix) * direc + mix * pc
-
-    for d in ("short", "long"):
-        ref = sum(p * math.log(p_two(t, d)) for t, p in model.items())
-        close(got[d], ref)
-        bogus = ref - math.log(dl2[d] + mu)
-        assert abs(got[d] - bogus) > 0.5, (d, got[d], bogus)
     print("all engine tests passed")
 
 

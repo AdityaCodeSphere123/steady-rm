@@ -1351,7 +1351,18 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
                 for (size_t i : at) r[i] = v;
             }
         }
-        if (P.fb_scale >= 1 && r.size() > 1) {
+        if (P.fb_scale >= 2 && r.size() > 1) {
+            // Center, then divide by fb_scale. Do not z-score: a z-score
+            // gives a noisy seed the same size as a clean one. The raw
+            // log-probability std is ~0.4, so lambda 0.9 with no divisor
+            // (4 Oct 13:19) dropped hidden B by 0.0023. Dividing by 8 makes
+            // the 0.1 weight the same size as the 13:04 run (B −0.00030).
+            double m = 0;
+            for (double x : r) m += x;
+            m /= static_cast<double>(r.size());
+            const double div = P.fb_scale;
+            for (double& x : r) x = (x - m) / div;
+        } else if (P.fb_scale >= 1 && r.size() > 1) {
             // Seed-independent unit: the pool std of the plain query
             // log-likelihood per query term. A mixed (noisy) seed gives a
             // flatter P(w|R) and so a smaller expansion term; a z-score

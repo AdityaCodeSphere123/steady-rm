@@ -120,9 +120,11 @@ struct Params {
     // Seed weights P(D|Q) from Dirichlet query likelihood even when the
     // Track A ranker is F2EXP (ranker=1); F2EXP is not a probability.
     double fb_seed_ql = 0;
-    // fb_mode 1 scale of the expansion term: 0 within-pool z-score,
-    // 1 divide by the pool std of log P(Q|D)/|Q| (does not depend on the seed).
-    double fb_scale = 0;
+    // fb_mode 1 scale of the expansion term:
+    //   0  z-score (a noisy seed is forced up to one standard deviation)
+    //   1  divide by the pool std of log P(Q|D)/|Q|
+    //   >=2  center and divide by fb_scale (8 ≈ the 13:04 residual size)
+    double fb_scale = 8;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
