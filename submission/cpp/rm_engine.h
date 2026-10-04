@@ -125,6 +125,11 @@ struct Params {
     //   1  divide by the pool std of log P(Q|D)/|Q|
     //   >=2  center and divide by fb_scale (8 ≈ the 13:04 residual size)
     double fb_scale = 8;
+    // After scaling, multiply the relevance vector by max(corr, 0)^fb_corr_pow,
+    // where corr is its correlation with the Track A scores on this pool.
+    // A seed that points the other way (full replacement, pool tail) shrinks
+    // toward Track A. 0 leaves the vector unchanged.
+    double fb_corr_pow = 0;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 

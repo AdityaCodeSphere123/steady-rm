@@ -25,7 +25,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
     X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(pool_lambda) X(pool_docs) \
@@ -1380,6 +1380,20 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
             for (double& x : r) x = sd > 1e-12 ? (x - m) / sd : 0.0;
         } else {
             zscore(r);
+        }
+        if (P.fb_corr_pow > 0 && r.size() > 2) {
+            double mr = 0, ms = 0;
+            for (size_t i = 0; i < r.size(); ++i) { mr += r[i]; ms += sa[i]; }
+            mr /= static_cast<double>(r.size());
+            ms /= static_cast<double>(sa.size());
+            double vr = 0, vs = 0, c = 0;
+            for (size_t i = 0; i < r.size(); ++i) {
+                double dr = r[i] - mr, ds = sa[i] - ms;
+                vr += dr * dr; vs += ds * ds; c += dr * ds;
+            }
+            double rho = (vr > 0 && vs > 0) ? c / std::sqrt(vr * vs) : 0;
+            double w = std::pow(std::max(0.0, rho), P.fb_corr_pow);
+            for (double& x : r) x *= w;
         }
         for (size_t i = 0; i < sa.size(); ++i) sa[i] = lam * sa[i] + (1.0 - lam) * r[i];
         return top_k(sa, cands, k);
