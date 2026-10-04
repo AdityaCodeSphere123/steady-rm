@@ -88,9 +88,12 @@ _FLAG_SETS = [
 # F2EXP scores because ranker=1 (fb_seed_ql=1 uses log P(q|D)); (3) a noisy seed
 # doc promoted ITSELF into the top 10 (fb_loo=1 scores a seed doc with the
 # model of the other seed docs); (4) fb_rm_w was never read (removed).
-# fb_mode=1: B = lambda * S_A + (1-lambda) * z(sum_w P(w|R) log P(w|D)), S_A =
-# the exact score_candidates() score, so lambda -> 1 is Track A itself and
-# (1-lambda)/lambda = 0.005 SD only breaks near-ties.
+# fb_mode=1, lambda=0.9, fb_scale=8:
+#   B = 0.9 * S_A + 0.1 * centered(sum P(w|R) log P(w|D)) / 8
+# S_A is the exact score_candidates() score. 4 Oct 13:19 left the log
+# probability unscaled: hidden B fell 0.53734766 -> 0.53531164, retention
+# stayed 0.9955, final 0.6317 -> 0.6184. The raw term has std ~0.4, so /8
+# restores the 13:04 residual size while lambda stays 0.9.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -108,7 +111,7 @@ PARAMS: Dict[str, float] = {
     "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
     "fb_sdm": 1, "fb_prior_w": -1,
-    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 0,
+    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 8,
 }
 
 _lib = None
