@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(qspell)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -763,43 +763,6 @@ std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs,
     return out;
 }
 
-std::vector<double> Engine::bm25_pool(const Query& q, const std::vector<int32_t>& docs) const {
-    const size_t n = docs.size(), U = q.uniq.size();
-    std::vector<double> out(n, 0.0);
-    if (!U) return out;
-    const double N = std::max(1.0, static_cast<double>(n_docs()));
-    const double avg = avgdl_ > 0 ? avgdl_ : 1.0;
-    const double k1 = P.bm25_k1 > 0 ? P.bm25_k1 : 1.2;
-    const double b = std::min(1.0, std::max(0.0, P.bm25_b));
-    const double delta = std::max(0.0, P.bm25_delta);
-    std::vector<double> idf(U);
-    for (size_t u = 0; u < U; ++u) {
-        const double df = static_cast<double>(df_[q.uniq[u]]);
-        idf[u] = std::log(1.0 + (N - df + 0.5) / (df + 0.5));
-    }
-    std::vector<uint32_t> tf(U, 0);
-    for (size_t i = 0; i < n; ++i) {
-        const int32_t d = docs[i];
-        if (d < 0) continue;
-        const uint32_t* t = toks_.data() + tok_off_[d];
-        const uint32_t dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
-        std::fill(tf.begin(), tf.end(), 0);
-        for (uint32_t k = 0; k < dlen; ++k) {
-            const uint16_t u = qmark_[t[k]];
-            if (u != 0xFFFF) ++tf[u];
-        }
-        const double K = k1 * (1.0 - b + b * static_cast<double>(dlen) / avg);
-        double s = 0;
-        for (size_t u = 0; u < U; ++u) {
-            if (!tf[u]) continue;
-            const double f = static_cast<double>(tf[u]);
-            s += q.uniq_cnt[u] * idf[u] * ((f * (k1 + 1.0)) / (f + K) + delta);
-        }
-        out[i] = s;
-    }
-    return out;
-}
-
 std::vector<double> Engine::f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const {
     const size_t n = docs.size(), U = q.uniq.size();
     std::vector<double> out(n, 0.0);
@@ -928,29 +891,11 @@ std::vector<double> Engine::track_a(const Query& q, const std::vector<std::strin
 }
 
 void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const {
-    if ((P.bm25_w <= 0 && P.ax_w <= 0) || docs.size() <= 1) return;
-    if (P.bm25_z >= 1.0) {
-        zscore(s);
-        if (P.bm25_w > 0) {
-            auto bm = bm25_pool(q, docs);
-            zscore(bm);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
-        }
-        if (P.ax_w > 0) {
-            auto ax = f2exp_pool(q, docs);
-            zscore(ax);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
-        }
-    } else {
-        if (P.bm25_w > 0) {
-            auto bm = bm25_pool(q, docs);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
-        }
-        if (P.ax_w > 0) {
-            auto ax = f2exp_pool(q, docs);
-            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
-        }
-    }
+    if (P.ax_w <= 0 || docs.size() <= 1) return;
+    zscore(s);
+    auto ax = f2exp_pool(q, docs);
+    zscore(ax);
+    for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
 }
 
 // ---------------------------------------------------------------------------
@@ -1323,9 +1268,12 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     if (variant == 3 && P.lam_qlen_slope != 0)
         lam = std::min(0.95, std::max(0.0, lam + P.lam_qlen_slope * (q.len() - P.lam_qlen_pivot)));
     if (variant == 3 && P.small_seed_n > 0) {
+        // Count the documents the model is actually estimated from. After
+        // fb_lock that is the Track A top-10 for a clean seed and for a
+        // swapped one, so a short or unresolved noisy list cannot change λ.
         size_t valid = 0;
         std::unordered_set<int32_t> seen;
-        for (auto id : seeds) { int32_t d = doc_index(id); if (d >= 0 && seen.insert(d).second) ++valid; }
+        for (auto id : seed_ids) { int32_t d = doc_index(id); if (d >= 0 && seen.insert(d).second) ++valid; }
         if (valid < P.small_seed_n) lam = 1.0 - (1.0 - lam) * valid / P.small_seed_n;
     }
     if (variant == 3 && P.qlen_shrink > 0 && q.len() > P.qlen_shrink)
@@ -1350,7 +1298,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
     // Textbook RM3 when the lexical ranker is off.
-    if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
+    if (P.ranker == 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
         std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
         return fuse_rank(base, cands, 0.0, k);
     }

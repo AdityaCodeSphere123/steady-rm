@@ -16,13 +16,12 @@ building or loading fails, the module falls back to the pure-Python
 implementation in _feedback_py.py, so the entrypoints always work.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  F2EXP unigrams, sequential dependence, a lead window, BM25 and
-           a rank prior, fused by a within-pool z-score. This is the
-           ranker that scored 0.53764598 nDCG and 0.45920121 MAP.
-  Track B  0.9 * that score + 0.1 * centered(sum P(w|R) log P(w|D)) / 8.
-           The relevance model is RM1 from the seed. A seed that is not
-           the Track A top-10 is drift: P(w|R) is estimated from that
-           top-10 instead, so the noisy ranking matches the clean one.
+  Track A  Dirichlet query likelihood (mu=500) plus a z-scored F2EXP
+           feature (weight 0.75, s=0.5, k=0.25).
+  Track B  RM3 inside that language model: 0.2 * query + 0.8 * RM1.
+           If no seed document holds at least 0.40 of the posterior,
+           feedback returns the exact Track A ranking. A seed that is not
+           the Track A top-10 is replaced by that top-10.
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -44,28 +43,27 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Track A is the 0.53764598 / 0.45920121 ranker (F2EXP + SDM + BM25 + prior).
-# Track B is 0.9 * that score + 0.1 * centered RM / 8. fb_lock rewrites a
-# drifted seed to the Track A top-10, so the noisy ranking matches Track B.
+# 4 Oct 17:14 upload: Track A 0.5328, Track B 0.5339, retention 1.
+# Dirichlet QL (mu=500) + z-scored F2EXP (0.75, s=0.5, k=0.25).
+# RM3 weight on the original query is 0.2. A flat seed returns Track A.
+# A seed that is not the Track A top-10 is replaced by that top-10.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 2, "jm_lambda": 0.5, "mu": 100,
-    "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
-    "len_prior": 0.3, "longq_n": 0,
-    "prior_w": 0.12, "prior_k": 7,
-    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 1.0,
-    "pool_lambda": 1.0, "pool_docs": 8,
-    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0,
+    "smoothing": 0, "jm_lambda": 0.50, "mu": 500,
+    "w_od": 0, "w_uw": 0, "uw_window": 8,
+    "lead_w": 0, "lead_len": 8, "lead_mu": 60,
+    "len_prior": 0,
+    "prior_w": 0, "prior_k": 4,
+    "ranker": 0, "ax_b": 0.5, "ax_k": 0.25, "ax_c": 1.0, "ax_w": 0.75,
     "rm_variant": 3,
-    "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
-    "idf_select": 0, "fb_qterms": 0, "support_frac": 0,
-    "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
+    "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
+    "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
+    "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.9,
-    "qlen_shrink": 16, "small_seed_n": 5,
-    "fb_sdm": 1,
-    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0, "fb_conf": 0, "fb_anchor_exp": 0,
+    "qlen_shrink": 0, "small_seed_n": 0,
+    "fb_sdm": 0,
+    "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
+    "fb_cov": 0.25, "fb_conf": 0.40, "fb_anchor_exp": 1.0,
     "fb_lock": 1,
 }
 
