@@ -81,6 +81,16 @@ _FLAG_SETS = [
 # 0.99777205, final 0.6243, rank 7. The mix is z-scored with BM25, so 20%
 # expansion reorders the pool. lambda 0.99 keeps the same model and moves
 # SciFact +0.0004 (40/300 lists) and Antique +0.0002, hard-seed retention 1.
+# 19:06 zip, same formula at lambda 0.9: B 0.53522850, retention 0.99683729.
+# 4 Oct audit of that path: (1) with smoothing=2 the expansion score used the
+# Dirichlet background for absent terms, a spurious -log(|D|+mu)-like length
+# penalty (fixed, tests/test_engine.py 3b); (2) P(D|Q) seed weights came from
+# F2EXP scores because ranker=1 (fb_seed_ql=1 uses log P(q|D)); (3) a noisy seed
+# doc promoted ITSELF into the top 10 (fb_loo=1 scores a seed doc with the
+# model of the other seed docs); (4) fb_rm_w was never read (removed).
+# fb_mode=1: B = lambda * S_A + (1-lambda) * z(sum_w P(w|R) log P(w|D)), S_A =
+# the exact score_candidates() score, so lambda -> 1 is Track A itself and
+# (1-lambda)/lambda = 0.005 SD only breaks near-ties.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
@@ -97,7 +107,8 @@ PARAMS: Dict[str, float] = {
     "agree_gamma": 0,
     "lambda": 0.9, "lambda_min": 0.8, "lambda_max": 0.95, "coh_w": 0.65,
     "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
-    "fb_sdm": 1, "fb_prior_w": -1, "fb_rm_w": 0.2,
+    "fb_sdm": 1, "fb_prior_w": -1,
+    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 0,
 }
 
 _lib = None

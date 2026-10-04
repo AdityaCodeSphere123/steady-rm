@@ -22,7 +22,7 @@ TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0,
                 fb_prior_w=0, rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
                 term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
                 fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
-                ranker=0, bm25_w=0, bm25_z=0, ax_w=0, fb_rm_w=0)
+                ranker=0, bm25_w=0, bm25_z=0, ax_w=0, fb_loo=0, fb_seed_ql=0, fb_mode=1)
 MU = 10.0
 
 tf = {d: Counter(t.split()) for d, t in DOCS.items()}
@@ -112,6 +112,46 @@ def main():
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)
     fb.score_candidates("apple juice", pool, 5)
     assert fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5) == a
+
+    # 6. Two-stage expansion must not subtract log(|D|+μ) a second time.
+    #    That penalty is about as large as the real signal and prefers short docs.
+    long_docs = {
+        "short": "qq qq",
+        "long": "qq qq " + " ".join(["pad"] * 80),
+        "seed": "qq qq qq topic",
+    }
+    path2 = os.path.join(tempfile.mkdtemp(), "corpus.jsonl")
+    with open(path2, "w") as f:
+        for d, t in long_docs.items():
+            f.write(json.dumps({"doc_id": d, "text": t}) + "\n")
+    fb.set_params(stemmer=0, doc_stop=0, query_stop=0, smoothing=2, jm_lambda=0.5, mu=10,
+                  mu_mode=0, w_od=0, w_uw=0, prior_w=0, fb_prior_w=0, rm2_mix=0, fb_mu=0,
+                  fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0, term_support=1,
+                  per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, **{"lambda": 0.0},
+                  fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0,
+                  qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0, ranker=0, bm25_w=0,
+                  bm25_z=0, ax_w=0, fb_loo=0, fb_seed_ql=0, fb_mode=1, rm_variant=3)
+    fb.prepare(path2)
+    model = dict(fb.relevance_model("qq", ["seed"], 1))
+    got = dict(fb.relevance_model_feedback("qq", ["seed"], ["short", "long"], 2))
+    tf2 = {d: Counter(t.split()) for d, t in long_docs.items()}
+    dl2 = {d: sum(c.values()) for d, c in tf2.items()}
+    cf2 = Counter()
+    for c in tf2.values():
+        cf2.update(c)
+    C2 = sum(cf2.values())
+    mu, mix = 10.0, 0.5
+
+    def p_two(term, doc):
+        pc = cf2[term] / C2
+        direc = (tf2[doc][term] + mu * pc) / (dl2[doc] + mu)
+        return (1 - mix) * direc + mix * pc
+
+    for d in ("short", "long"):
+        ref = sum(p * math.log(p_two(t, d)) for t, p in model.items())
+        close(got[d], ref)
+        bogus = ref - math.log(dl2[d] + mu)
+        assert abs(got[d] - bogus) > 0.5, (d, got[d], bogus)
     print("all engine tests passed")
 
 
