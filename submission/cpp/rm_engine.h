@@ -107,11 +107,22 @@ struct Params {
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
     double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
-    // Fraction of the document-score std given to the relevance model
-    // at lambda 0. Added std is fb_rm_w * (1-lambda) * std(base).
-    // The raw residual is only ~4% of that std; multiplying it by 0.005
-    // left 0.7 and 0.8 with the same ranking.
-    double fb_rm_w = 0.2;
+    // How the relevance model enters the Track A ranker:
+    //   0  RM3 inside the language-model part, then BM25 / z-score / prior
+    //   1  score = lambda * S_A(D) + (1-lambda) * z(sum_w P(w|R) log P(w|D)),
+    //      S_A = the final score_candidates() score, z = within-pool z-score.
+    double fb_mode = 0;
+    double fb_rm_w = 0.2;        // unused (kept so old PARAMS dicts still load)
+    // Leave-one-out: a candidate that is itself a seed document is scored
+    // with P(w|R) estimated from the other seed documents, so a seed doc
+    // cannot lift itself (a noisy seed doc otherwise promotes itself).
+    double fb_loo = 0;
+    // Seed weights P(D|Q) from Dirichlet query likelihood even when the
+    // Track A ranker is F2EXP (ranker=1); F2EXP is not a probability.
+    double fb_seed_ql = 0;
+    // fb_mode 1 scale of the expansion term: 0 within-pool z-score,
+    // 1 divide by the pool std of log P(Q|D)/|Q| (does not depend on the seed).
+    double fb_scale = 0;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
@@ -168,6 +179,12 @@ private:
     double qpart(const Query& q, const DocFeat& f, bool sdm) const;
     std::vector<Ranked> fuse_rank(std::vector<double>& score, const std::vector<std::string_view>& ids,
                                   double prior_w, int k) const;
+    std::vector<double> fuse_scores(const std::vector<double>& score, double prior_w) const;
+    std::vector<double> track_a(const Query& q, const std::vector<std::string_view>& cands,
+                                const std::vector<int32_t>& docs);
+    std::vector<Ranked> top_k(const std::vector<double>& fused, const std::vector<std::string_view>& ids, int k) const;
+    std::vector<double> rm_pool(const std::vector<int32_t>& docs,
+                                const std::vector<std::pair<uint32_t, double>>& model) const;
     std::vector<Ranked> pool_order(const std::vector<std::string_view>& ids, int k) const;
 
     // Relevance-model internals.

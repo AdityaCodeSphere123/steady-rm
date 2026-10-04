@@ -25,7 +25,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(mu_mode) X(mu_loo_scale) X(mu_loo_docs) X(len_prior) X(small_seed_n) X(longq_n) \
     X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(pool_lambda) X(pool_docs) \
@@ -735,15 +735,23 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     std::vector<double> out(n, 0.0);
     const double T = static_cast<double>(total_), mu = mu_eff();
     const bool jm = P.smoothing >= 1 && P.smoothing < 2;
+    const bool two_stage = P.smoothing >= 2;
+    const double ts_l = std::min(0.95, std::max(0.0, P.jm_lambda));
     std::vector<double>& mw = mw_;       // dense model weights, all zero between calls
     double msum = 0, base_const = 0;
+    // Background part, log P(w|D) of a term absent from D:
+    //   Dirichlet   log(mu pc) - log(|D| + mu)
+    //   JM          log(l pc)
+    //   two-stage   log(pc) + log((1-l) mu / (|D| + mu) + l)
+    // (two-stage used the Dirichlet form before, which added a spurious
+    // -log(|D|+mu)-like length penalty to the expansion score.)
     if (model) {
         if (mw.size() != vocab_.size()) mw.assign(vocab_.size(), 0.0);
         for (auto& [t, w] : *model) {
             mw[t] = w;
             msum += w;
             double pc = cf_[t] / T;
-            base_const += w * (jm ? std::log(P.jm_lambda * pc) : std::log(mu * pc));
+            base_const += w * (jm ? std::log(P.jm_lambda * pc) : two_stage ? std::log(pc) : std::log(mu * pc));
         }
     }
     const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
@@ -768,7 +776,8 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
                 s.cnt[w] = 0;
             }
         }
-        if (!jm) rmp -= msum * std::log(dlen + mu);
+        if (two_stage) rmp += msum * std::log((1.0 - ts_l) * mu / (dlen + mu) + ts_l);
+        else if (!jm) rmp -= msum * std::log(dlen + mu);
         out[i] = lam * qs / qn + (1 - lam) * rmp + lprior / qn;
     };
     uint64_t work = 0;
@@ -782,6 +791,35 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
         for (size_t i = 0; i < n; ++i) one(i, *scratch_[0]);
     }
     if (model) for (auto& x : *model) mw[x.first] = 0.0;
+    return out;
+}
+
+// sum_w P(w|R) log P(w|D) for each doc, term by term (no decomposition):
+// the expansion score of RM3 / the negative cross-entropy of RM1.
+std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs,
+                                    const std::vector<std::pair<uint32_t, double>>& model) const {
+    const double T = static_cast<double>(total_);
+    std::unordered_map<uint32_t, uint32_t> slot;
+    for (size_t j = 0; j < model.size(); ++j) slot.emplace(model[j].first, static_cast<uint32_t>(j));
+    std::vector<double> out(docs.size(), 0.0);
+    std::vector<uint32_t> tf(model.size());
+    for (size_t i = 0; i < docs.size(); ++i) {
+        const int32_t d = docs[i];
+        std::fill(tf.begin(), tf.end(), 0);
+        uint32_t dlen = 0;
+        if (d >= 0) {
+            const uint32_t* t = toks_.data() + tok_off_[d];
+            dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+            for (uint32_t k = 0; k < dlen; ++k) {
+                auto it = slot.find(t[k]);
+                if (it != slot.end()) ++tf[it->second];
+            }
+        }
+        double s = 0;
+        for (size_t j = 0; j < model.size(); ++j)
+            s += model[j].second * log_p(tf[j], dlen, cf_[model[j].first] / T);
+        out[i] = s;
+    }
     return out;
 }
 
@@ -875,8 +913,7 @@ static void zscore(std::vector<double>& v) {
     for (double& x : v) x = sd < 1e-12 ? 0.0 : (x - m) / sd;
 }
 
-std::vector<Ranked> Engine::fuse_rank(std::vector<double>& score, const std::vector<std::string_view>& ids,
-                                      double prior_w, int k) const {
+std::vector<double> Engine::fuse_scores(const std::vector<double>& score, double prior_w) const {
     const size_t n = score.size();
     std::vector<double> fused = score;
     if (prior_w > 0 && n > 1) {
@@ -886,6 +923,17 @@ std::vector<Ranked> Engine::fuse_rank(std::vector<double>& score, const std::vec
         zscore(pr);
         for (size_t i = 0; i < n; ++i) fused[i] += prior_w * pr[i];
     }
+    return fused;
+}
+
+std::vector<Ranked> Engine::fuse_rank(std::vector<double>& score, const std::vector<std::string_view>& ids,
+                                      double prior_w, int k) const {
+    return top_k(fuse_scores(score, prior_w), ids, k);
+}
+
+std::vector<Ranked> Engine::top_k(const std::vector<double>& fused, const std::vector<std::string_view>& ids,
+                                  int k) const {
+    const size_t n = fused.size();
     std::vector<int32_t> order(n);
     for (size_t i = 0; i < n; ++i) order[i] = static_cast<int32_t>(i);
     auto cmp = [&](int32_t a, int32_t b) {
@@ -916,6 +964,14 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
     Marks mk(*this, q);
     std::vector<int32_t> docs(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
+    return top_k(track_a(q, cands, docs), cands, k);
+}
+
+// The final Track A score of every candidate (before sorting). Shared by
+// score_candidates() and feedback(fb_mode=1), so Track B starts from the
+// exact same numbers.
+std::vector<double> Engine::track_a(const Query& q, const std::vector<std::string_view>& cands,
+                                    const std::vector<int32_t>& docs) {
     std::vector<double> s = score_pool(q, docs, nullptr, 1.0, true);
     if (P.pool_lambda < 1.0 && P.pool_lambda >= 0.0) {
         const size_t nd = std::min(cands.size(), static_cast<size_t>(std::max(1.0, P.pool_docs)));
@@ -928,7 +984,7 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
         }
     }
     add_lexical(q, docs, s);
-    return fuse_rank(s, cands, P.prior_w, k);
+    return fuse_scores(s, P.prior_w);
 }
 
 void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const {
@@ -988,12 +1044,15 @@ std::vector<Engine::Seed> Engine::seed_weights(const Query& q, const std::vector
     std::vector<double> m(ds.size());
     std::vector<bool> anch(ds.size());
     size_t n_anch = 0;
+    const double saved_ranker = P.ranker;
+    if (P.fb_seed_ql > 0) P.ranker = 0;   // P(D|Q) from log P(q|D), not F2EXP
     for (size_t i = 0; i < ds.size(); ++i) {
         DocFeat f = doc_features(q, ds[i], s);
         m[i] = qpart(q, f, P.seed_sdm > 0) / qn;
         anch[i] = f.matched > 0;
         n_anch += anch[i];
     }
+    P.ranker = saved_ranker;
     bool use_anchor = P.anchor_min > 0 && n_anch >= P.anchor_min;
     const double beta = P.beta < 0 ? qn : P.beta;
     double best = -1e300;
@@ -1268,6 +1327,51 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
         std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
         return fuse_rank(base, cands, 0.0, k);
+    }
+    if (P.fb_mode >= 1) {
+        // RM3 on top of the Track A score. KL scoring with the expanded model
+        // P_RM3 = lambda P(w|Q) + (1-lambda) P(w|R) is
+        //   lambda * (query part) + (1-lambda) * sum_w P(w|R) log P(w|D);
+        // the query part here is the whole Track A score S_A, and the
+        // expansion part is put on the same within-pool scale by a z-score.
+        std::vector<double> sa = track_a(q, cands, docs);
+        std::vector<double> r = rm_pool(docs, model);
+        if (P.fb_loo > 0 && seed.size() >= 2) {
+            for (size_t j = 0; j < seed.size(); ++j) {
+                std::vector<size_t> at;
+                for (size_t i = 0; i < docs.size(); ++i) if (docs[i] == seed[j].d) at.push_back(i);
+                if (at.empty()) continue;
+                std::vector<Seed> rest;
+                double z = 0;
+                for (size_t m = 0; m < seed.size(); ++m) if (m != j) { rest.push_back(seed[m]); z += seed[m].w; }
+                for (auto& x : rest) x.w = z > 0 ? x.w / z : 1.0 / rest.size();
+                auto m2 = estimate(q, rest, variant, s);
+                if (m2.empty()) continue;
+                const double v = rm_pool({seed[j].d}, m2)[0];
+                for (size_t i : at) r[i] = v;
+            }
+        }
+        if (P.fb_scale >= 1 && r.size() > 1) {
+            // Seed-independent unit: the pool std of the plain query
+            // log-likelihood per query term. A mixed (noisy) seed gives a
+            // flatter P(w|R) and so a smaller expansion term; a z-score
+            // would blow it back up to one standard deviation.
+            const double saved_ranker = P.ranker, saved_lp = P.len_prior;
+            P.ranker = 0; P.len_prior = 0;
+            std::vector<double> ql = score_pool(q, docs, nullptr, 1.0, false);
+            P.ranker = saved_ranker; P.len_prior = saved_lp;
+            double m = 0, mq = 0;
+            for (size_t i = 0; i < r.size(); ++i) { m += r[i]; mq += ql[i]; }
+            m /= r.size(); mq /= r.size();
+            double var = 0;
+            for (double x : ql) var += (x - mq) * (x - mq);
+            const double sd = std::sqrt(var / ql.size()) / q.len();
+            for (double& x : r) x = sd > 1e-12 ? (x - m) / sd : 0.0;
+        } else {
+            zscore(r);
+        }
+        for (size_t i = 0; i < sa.size(); ++i) sa[i] = lam * sa[i] + (1.0 - lam) * r[i];
+        return top_k(sa, cands, k);
     }
     // RM3 query expansion, then the Track A ranker. The language-model
     // score is λ·P(Q|D) + (1-λ)·Σ_w P(w|R) log P(w|D). BM25 and the rank
