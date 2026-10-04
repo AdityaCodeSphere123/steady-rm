@@ -23,7 +23,7 @@ SPACE = {
     # value sat on the edge of the old grid (lead_w, w_od, fb_mu, prior_k,
     # idf_power).
     # Track A
-    "mu_factor": [3.5, 4, 4.5],
+    "mu": [100, 250, 500, 1000],
     "prior_w": [0.25, 0.3, 0.35],
     "prior_k": [10, 20, 40],
     "len_prior": [0.15, 0.25, 0.35],

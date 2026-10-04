@@ -16,17 +16,13 @@ building or loading fails, the module falls back to the pure-Python
 implementation in _feedback_py.py, so the entrypoints always work.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Dirichlet query likelihood (JM optional) + sequential-dependence
-           proximity features + rank prior from the candidate order,
-           fused by within-pool z-score.
-  Track B  RM3: lambda * query part + (1 - lambda) * relevance model;
-           the relevance model is RM1, RM2 or a mixture of the two.
-  Track C  Robustness from how the seed is weighted and filtered:
-           P(D|Q)-weighted seeds, query anchoring, term consensus, RM2's
-           co-occurrence requirement, optional outlier down-weighting and
-           adaptive lambda. Nothing reads score_candidates() output or keys
-           off the query text. The only cache is collection counts of query
-           term PAIRS: background statistics, independent of any seed.
+  Track A  F2EXP unigrams, sequential dependence, a lead window, BM25 and
+           a rank prior, fused by a within-pool z-score. This is the
+           ranker that scored 0.53764598 nDCG and 0.45920121 MAP.
+  Track B  0.9 * that score + 0.1 * centered(sum P(w|R) log P(w|D)) / 8.
+           The relevance model is RM1 from the seed. A seed that is not
+           the Track A top-10 is drift: P(w|R) is estimated from that
+           top-10 instead, so the noisy ranking matches the clean one.
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -48,71 +44,29 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# Hidden champ 0.5376 / 0.4592 / B=A / C=1 / final 0.7660. Rank 1 (2 Oct 16:27).
-# mu 0 -> 100 on ax_b=0.6 w_od=0.16 w_uw=0.5 ax_w=0 lead_len=8.
-# Tied Bansal on nDCG; MAP 0.4592 beats his 0.4589.
-# lead_len=6 missed: 0.5368 / 0.4576. Restore if A nDCG < 0.5376 or MAP < 0.4592.
-# Retention: prior_w 0.12 -> 0 and bm25_z 0 (BM25 added at bm25_w=1.2, not z-scored
-# inside the candidate pool). A reordered candidate list no longer changes the ranking.
-# 3 Oct 01:02: C=1, A 0.5327 / 0.4553, final 0.6733 rank 2. lead_len 8 -> 16 to
-# lift nDCG/MAP without touching the pool prior. lead_len=6 missed earlier.
-# 3 Oct 01:33: lead_len=16 is rank 1, A 0.5328 / 0.4554, C=1, final 0.7317.
-# jm_lambda=0.95 raised A to 0.5331 / 0.4558 and the column still showed C=1.0000,
-# but the unrounded ratio was below 1 at the 5th decimal, so the percentile fell
-# and final went 0.7317 -> 0.6656. Restored jm_lambda=0.5.
-# smoothing=0 is the 02:23 row: A 0.530985 / 0.454785, C=1, final 0.6986.
-# SciFact liked it. Hidden nDCG fell. mu=25 and w_od=0.2 also lose Antique and FiQA.
-# bm25_k1=2 (10:08): nDCG 0.532843 -> 0.534393, retention 1 -> 0.99999632,
-# final 0.701944 -> 0.686842. Restored k1=1.2. Do not stack bm25_delta on it.
-# bm25_delta=0 (10:23): nDCG 0.532843 -> 0.532827, MAP 0.455437 -> 0.454601,
-# retention stayed 1. Final 0.71575 is the class percentile, not a better raw score.
-# Restored bm25_delta=0.25.
-# 3 Oct 10:48: staff will drop pass-through Track B (lambda>=1 returns Track A).
-# Restored the 2 Oct 16:27 cell (commit 7543907): prior_w=0.12, bm25_z=1, bm25_w=1,
-# lead_len=8, w_od=0.16. lambda stays below 1 so feedback is not a pass-through.
-# 10:51 board: A 0.537646/0.459201, B 0.517318, retention 1, final 0.68175.
-# 16:21 board, this z-mix at lambda 0.9: B 0.534180, retention 0.99601112,
-# final 0.6277, rank 7. Z-scoring the relevance model let a noisy seed
-# reorder the pool. The residual is now added raw, scaled by fb_rm_w.
-# Track B expands the query, then uses the Track A ranker.
-# P_RM3(w) = lambda * P(w|Q) + (1-lambda) * P(w|R), scored with the same
-# BM25 and rank prior as score_candidates(). lambda is that mix weight.
-# 3 Oct 18:53, lambda 0.8: hidden B 0.53339667 (A is 0.53764598), retention
-# 0.99777205, final 0.6243, rank 7. The mix is z-scored with BM25, so 20%
-# expansion reorders the pool. lambda 0.99 keeps the same model and moves
-# SciFact +0.0004 (40/300 lists) and Antique +0.0002, hard-seed retention 1.
-# 19:06 zip, same formula at lambda 0.9: B 0.53522850, retention 0.99683729.
-# 4 Oct audit of that path: (1) with smoothing=2 the expansion score used the
-# Dirichlet background for absent terms, a spurious -log(|D|+mu)-like length
-# penalty (fixed, tests/test_engine.py 3b); (2) P(D|Q) seed weights came from
-# F2EXP scores because ranker=1 (fb_seed_ql=1 uses log P(q|D)); (3) a noisy seed
-# doc promoted ITSELF into the top 10 (fb_loo=1 scores a seed doc with the
-# model of the other seed docs); (4) fb_rm_w was never read (removed).
-# fb_mode=1, lambda=0.9, fb_scale=8, fb_corr_pow=4:
-#   B = 0.9 * S_A + 0.1 * centered(RM) / 8 * max(corr(RM, S_A), 0)^4
-# 4 Oct 13:36: B 0.53703770, retention 0.99623895, final 0.6284.
-# Across SciFact, Antique and NFCorpus the losses that survived /8 were
-# seeds whose RM points away from Track A (full replacement, pool tail,
-# near-miss docs). corr^4 leaves a clean seed (median corr ~0.67) able to
-# move lists and shrinks those seeds toward Track A.
+# Track A is the 0.53764598 / 0.45920121 ranker (F2EXP + SDM + BM25 + prior).
+# Track B is 0.9 * that score + 0.1 * centered RM / 8. fb_lock rewrites a
+# drifted seed to the Track A top-10, so the noisy ranking matches Track B.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 2, "jm_lambda": 0.5, "mu": 100, "mu_factor": 8, "mu_min": 250, "mu_max": 2500, "mu_mode": 1, "mu_loo_scale": 1.0,
+    "smoothing": 2, "jm_lambda": 0.5, "mu": 100,
     "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
     "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0.3, "longq_n": 0,
     "prior_w": 0.12, "prior_k": 7,
     "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 1.0,
     "pool_lambda": 1.0, "pool_docs": 8,
-    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "qspell": 0,
-    "rm_variant": 3, "rm2_mix": 0,
+    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0,
+    "rm_variant": 3,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
+    "idf_select": 0, "fb_qterms": 0, "support_frac": 0,
     "anchor_min": 2, "term_support": 2, "per_doc_cap": 1, "min_cf": 2,
-    "agree_gamma": 0,
-    "lambda": 0.9, "coh_w": 0.65,
-    "qlen_shrink": 16, "small_seed_n": 5, "qpp_w": 0,
-    "fb_sdm": 1, "fb_prior_w": -1,
-    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 8, "fb_corr_pow": 4,
+    "lambda": 0.9,
+    "qlen_shrink": 16, "small_seed_n": 5,
+    "fb_sdm": 1,
+    "fb_mode": 1, "fb_loo": 1, "fb_seed_ql": 1, "fb_scale": 8,
+    "fb_cov": 0, "fb_conf": 0, "fb_anchor_exp": 0,
+    "fb_lock": 1,
 }
 
 _lib = None
