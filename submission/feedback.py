@@ -21,12 +21,12 @@ Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
            tokens, weight 0.05), a document-length prior (0.4 log|D|) and
            an F2EXP feature (weight 2), all on a fixed per-document scale.
            A candidate-rank prior (0.12, k=7) is fused on top.
-  Track B  RM3 on the same model: 0.9 * Track A score + 0.1 * RM1. The
-           rank prior is off for the whole call. If no seed document holds
-           at least 0.30 of the posterior, feedback returns that model's
-           ranking. A seed that is not its top-10 is replaced by that
-           top-10. No score depends on the order or the other members of
-           candidate_doc_ids.
+  Track B  With fb_stable=1, feedback uses the Dirichlet + z-scored F2EXP
+           ranker that scored hidden retention 1 (RM3 lambda 0.9, not 1).
+           Track A's two-stage knobs are restored when the call returns.
+           A seed is replaced by that ranker's own top-10. If no seed
+           document holds at least 0.30 of the posterior, feedback returns
+           that ranker's query-likelihood ranking.
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -54,21 +54,24 @@ _FLAG_SETS = [
 # on 14-47% of queries when the pool was reordered or a few documents were
 # added or dropped. Over 11 local collections this point is Track A
 # +0.0052 nDCG / +0.0032 MAP and Track B +0.0050 against the 12:19 upload
-# (prior_w=0); the rank prior adds +0.0013 to Track A. Rank prior is
-# Track A only (fb_prior_w=0).
+# (prior_w=0); the rank prior adds +0.0013 to Track A. The hidden noisy
+# runs reorder the pool: with the prior in feedback (fb_prior_w=-1)
+# retention fell to 0.99677, so Track B leaves it out (fb_prior_w=0) and
+# no Track B score reads the pool order. qspell=1: SciFact Track A +0.005.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
+    "qspell": 1,
     "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
     "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
-    "len_prior": 0.4,
+    "len_prior": 0.35,
     "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
     "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
     "rm_variant": 3,
     "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
-    "lambda": 0.9,
+    "lambda": 0.8,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,

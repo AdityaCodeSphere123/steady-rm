@@ -1,9 +1,12 @@
 import sys, json
 from submission import feedback as fb
 from tools.track_a_sweep import load, evaluate
-SETS="scifact nfcorpus fiqa vaswani antique touche2020 scidocs cacm cranfield arguana full".split()
+SETS=sys.argv[2].split(",") if len(sys.argv)>2 else "scifact nfcorpus fiqa vaswani antique touche2020 scidocs cacm cranfield arguana full".split()
 configs=json.loads(open(sys.argv[1]).read())
-base=dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS)
+base=dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS); base.update(json.loads(sys.argv[3]) if len(sys.argv)>3 else {})
+for c in configs.values():
+    for key in c:
+        base.setdefault(key, fb.get_param(key))
 res={k:{} for k in configs}
 for s in SETS:
     d=load(s); fb.set_params(**base); fb.prepare(d[0])
