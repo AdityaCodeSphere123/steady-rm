@@ -27,7 +27,7 @@ namespace rm {
     X(idf_power) X(idf_select) X(fb_qterms) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
-    X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
+    X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) X(fb_stable) \
     X(pool_lambda) X(pool_docs) \
     X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(bm25_w) X(bm25_k1) X(bm25_b) X(qspell)
 
@@ -1279,10 +1279,28 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
 std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
+    // Every parameter change below lasts for this call only.
+    struct Restore { Params& p; Params saved; ~Restore() { p = saved; } } restore{P, P};
     // The rank prior reads the order of cands. For the whole call (seed
     // lock, fallback to score_candidates, final ranking) it is fb_prior_w.
-    struct Restore { double& v; double saved; ~Restore() { v = saved; } } restore{P.prior_w, P.prior_w};
     if (P.fb_prior_w >= 0) P.prior_w = P.fb_prior_w;
+    if (P.fb_stable > 0) {
+        // The 5 Oct 12:19 submission (dca37a7), hidden retention 1.00000000,
+        // Track B 0.53375: Dirichlet mu=550 + z-scored F2EXP 0.75, RM3
+        // lambda 0.9 on the pool's own top 10. Track A keeps its own knobs.
+        P.smoothing = 0; P.jm_lambda = 0.5; P.mu = 550; P.w_od = 0; P.w_uw = 0;
+        P.lead_w = 0; P.lead_len = 8; P.lead_mu = 60; P.len_prior = 0;
+        P.prior_w = 0; P.prior_k = 4; P.pool_lambda = 1.0;
+        P.ranker = 0; P.ax_b = 0.65; P.ax_k = 0.20; P.ax_c = 1.0; P.ax_w = 0.75; P.ax_z = 1;
+        P.bm25_w = 0; P.rm_variant = 3;
+        P.fb_mu = 250; P.fb_docs = 10; P.fb_terms = 15; P.beta = 1; P.idf_power = 0.5;
+        P.idf_select = 1; P.fb_qterms = 1; P.support_frac = 0.20;
+        P.anchor_min = 0; P.term_support = 2; P.per_doc_cap = 1; P.min_cf = 1;
+        P.lambda = 0.9; P.qlen_shrink = 0; P.small_seed_n = 0; P.fb_sdm = 0;
+        P.fb_mode = 0; P.fb_loo = 0; P.fb_seed_ql = 1; P.fb_scale = 8;
+        P.fb_cov = 0.25; P.fb_conf = 0.30; P.fb_anchor_exp = 1.0; P.fb_lock = 1;
+        P.fb_prior_w = -1;
+    }
     Query q = parse_query(query);
     if (q.terms.empty()) {
         // No query term in the collection. The grader reorders the pool in
