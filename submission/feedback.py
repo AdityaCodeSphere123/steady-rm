@@ -50,7 +50,7 @@ _FLAG_SETS = [
 # replaced by that top-10.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 0, "jm_lambda": 0.50, "mu": 500,
+    "smoothing": 0, "jm_lambda": 0.50, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
     "lead_w": 0, "lead_len": 8, "lead_mu": 60,
     "len_prior": 0,
