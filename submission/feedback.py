@@ -16,7 +16,7 @@ building or loading fails, the module falls back to the pure-Python
 implementation in _feedback_py.py, so the entrypoints always work.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Dirichlet query likelihood (mu=500) plus a z-scored F2EXP
+  Track A  Dirichlet query likelihood (mu=550) plus a z-scored F2EXP
            feature (weight 0.75, s=0.65, k=0.20).
   Track B  RM3 inside that language model: 0.2 * query + 0.8 * RM1.
            If no seed document holds at least 0.40 of the posterior,
@@ -44,7 +44,7 @@ _FLAG_SETS = [
 ]
 
 # 4 Oct 17:14 upload: Track A 0.5328, Track B 0.5339, retention 1.
-# Dirichlet QL (mu=500) + z-scored F2EXP (0.75, s=0.65, k=0.20).
+# Dirichlet QL (mu=550) + z-scored F2EXP (0.75, s=0.65, k=0.20).
 # RM3 weight on the original query is 0.2. A flat seed (heaviest weight
 # below 0.40) returns Track A. A seed that is not the Track A top-10 is
 # replaced by that top-10.
