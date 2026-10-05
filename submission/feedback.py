@@ -77,9 +77,6 @@ PARAMS: Dict[str, float] = {
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
     "fb_cov": 0.25, "fb_conf": 0.30, "fb_anchor_exp": 1.0,
     "fb_lock": 1,
-    # Feedback runs the dca37a7 ranker (hidden retention 1.00000000, Track B
-    # 0.53375); the knobs above then only shape Track A.
-    "fb_stable": 1,
 }
 
 _lib = None

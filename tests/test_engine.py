@@ -23,7 +23,7 @@ TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0,
                 term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
                 fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
                 ranker=0, ax_w=0, fb_rm_w=0,
-                support_frac=0, idf_select=0, fb_qterms=0, fb_cov=0, fb_conf=0, fb_anchor_exp=0, fb_lock=0, fb_stable=0)
+                support_frac=0, idf_select=0, fb_qterms=0, fb_cov=0, fb_conf=0, fb_anchor_exp=0, fb_lock=0)
 MU = 10.0
 
 tf = {d: Counter(t.split()) for d, t in DOCS.items()}
