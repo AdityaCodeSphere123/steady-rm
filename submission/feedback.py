@@ -57,10 +57,10 @@ _FLAG_SETS = [
 # (prior_w=0); the rank prior adds +0.0013 to Track A. The hidden noisy
 # runs reorder the pool: with the prior in feedback (fb_prior_w=-1)
 # retention fell to 0.99677, so Track B leaves it out (fb_prior_w=0) and
-# no Track B score reads the pool order. qspell=1: SciFact Track A +0.005.
+# no Track B score reads the pool order. qspell=1 cost hidden Track A 0.009.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "qspell": 1,
+    "qspell": 0,
     "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
     "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
