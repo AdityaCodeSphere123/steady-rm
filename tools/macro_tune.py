@@ -1,11 +1,10 @@
 """
-One-parameter sweep, then a short coordinate pass, on SciFact only.
-A tick is kept only when both SciFact nDCG and MAP do not fall.
+One-parameter sweep, then a short coordinate pass, on SciFact and Antique.
+A tick is kept only when both datasets' nDCG and MAP do not fall.
 
-Starts from the retention-safe point in submission/feedback.py.
-prior_w, pool_lambda, and lambda stay fixed. They read the
-candidate list or the seed. The other Track A knobs are swept past the
-old ranges.
+Starts from the current parameters in submission/feedback.py.
+prior_w, pool_lambda, and lambda stay fixed. SciFact and Antique
+must both hold their nDCG and MAP for a tick to be kept.
 
 Writes macro_tune_out.txt in the repo root after every line, and
 macro_tune_result.json when it finishes.
@@ -33,41 +32,45 @@ def ticks(lo, hi, step):
 
 
 # Trailing comma matters: ("scifact") is a string, not a one-item tuple.
-SETS = ("scifact",)
-WEIGHT = {"scifact": 1.0}
+SETS = ("scifact", "antique")
+WEIGHT = {"scifact": 1.0, "antique": 1.0}
 
-# Retention-safe start. prior_w, pool_lambda, lambda_ are not in GRID.
+# Current submission/feedback.py. prior_w, pool_lambda, and lambda_ stay fixed.
 BASE = dict(
-    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0, qspell=0,
-    smoothing=2, jm_lambda=0.5, mu=500,
+    stemmer=2, doc_stop=0, query_stop=2, qstop_min_len=0, qstop_list=0,
+    smoothing=2, jm_lambda=0.5, mu=100,
     w_od=0.16, w_uw=0.5, uw_window=16,
-    lead_w=0.22, lead_len=16, lead_mu=60,
+    lead_w=0.22, lead_len=8, lead_mu=60,
     len_prior=0.3, longq_n=0,
-    prior_w=0.0, prior_k=7,
+    prior_w=0.12, prior_k=7,
+    bm25_w=1.0, bm25_k1=1.2, bm25_b=0.4, bm25_delta=0.25, bm25_z=1.0,
     pool_lambda=1.0, pool_docs=8,
     ranker=1, ax_b=0.6, ax_k=0.35, ax_c=1.0, ax_w=0.0,
-    lambda_=1.0,
+    lambda_=0.9,
 )
 
 # Tokenisation knobs are applied at prepare(), so each tick rebuilds the index.
 PREP = {"stemmer", "doc_stop"}
 
-# Movable knobs only. Ranges extend past the old caps.
-# Locked, not swept: prior_w=0, pool_lambda=1, lambda=1.
+# Tight ticks around the current values. Locked: prior_w, pool_lambda, lambda.
 GRID = [
     ("smoothing", [0, 1, 2]),
-    ("jm_lambda", ticks(0.0, 1.0, 0.05)),
-    ("mu", [0, 25, 50, 100, 200, 400, 800, 1500, 2500, 4000, 8000]),
-    ("w_od", ticks(0.0, 1.0, 0.05)),
-    ("w_uw", ticks(0.0, 1.5, 0.05)),
-    ("uw_window", [2, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96]),
-    ("lead_w", ticks(0.0, 1.0, 0.05)),
-    ("lead_len", [0, 4, 8, 12, 16, 24, 32, 48, 64, 96]),
-    ("lead_mu", [5, 20, 40, 60, 100, 200, 400, 800, 1600]),
-    ("len_prior", ticks(0.0, 1.2, 0.05)),
-    ("ax_b", ticks(0.0, 2.0, 0.1)),
-    ("ax_k", ticks(0.05, 1.5, 0.05)),
-    ("ax_c", [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]),
+    ("jm_lambda", [0.3, 0.4, 0.5, 0.6, 0.7]),
+    ("mu", [50, 75, 100, 150, 200, 400]),
+    ("w_od", [0.08, 0.12, 0.16, 0.20, 0.24, 0.32]),
+    ("w_uw", [0.3, 0.4, 0.5, 0.6, 0.7]),
+    ("uw_window", [8, 12, 16, 24, 32]),
+    ("lead_w", [0.10, 0.16, 0.22, 0.28, 0.34]),
+    ("lead_len", [4, 8, 12, 16]),
+    ("lead_mu", [30, 60, 100, 200]),
+    ("len_prior", [0.1, 0.2, 0.3, 0.4, 0.5]),
+    ("ax_b", [0.4, 0.5, 0.6, 0.7, 0.8]),
+    ("ax_k", [0.20, 0.25, 0.35, 0.45, 0.55]),
+    ("ax_c", [0.5, 1.0, 1.5, 2.0]),
+    ("bm25_w", [0.5, 0.75, 1.0, 1.25, 1.5]),
+    ("bm25_k1", [0.8, 1.0, 1.2, 1.5, 1.8]),
+    ("bm25_b", [0.25, 0.4, 0.55, 0.75]),
+    ("bm25_delta", [0.0, 0.15, 0.25, 0.4, 0.5]),
 ]
 
 
