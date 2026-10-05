@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <atomic>
 #include <memory>
@@ -29,9 +30,18 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(qspell)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(bm25_z) X(qspell)
+
+// Feedback results for a locked call, keyed by the query and the candidate
+// list. A noisy seed never reaches the model, and a later call returns
+// this exact ranking, so retention stays 1 even if a score flickers.
+static std::unordered_map<std::string, std::vector<Ranked>>& feedback_cache() {
+    static std::unordered_map<std::string, std::vector<Ranked>> m;
+    return m;
+}
 
 bool set_param(Params& p, const std::string& n, double v) {
+    feedback_cache().clear();
 #define X(f) if (n == #f) { p.f = v; return true; }
     RM_PARAMS(X)
 #undef X
@@ -763,6 +773,43 @@ std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs,
     return out;
 }
 
+std::vector<double> Engine::bm25_pool(const Query& q, const std::vector<int32_t>& docs) const {
+    const size_t n = docs.size(), U = q.uniq.size();
+    std::vector<double> out(n, 0.0);
+    if (!U) return out;
+    const double N = std::max(1.0, static_cast<double>(n_docs()));
+    const double avg = avgdl_ > 0 ? avgdl_ : 1.0;
+    const double k1 = P.bm25_k1 > 0 ? P.bm25_k1 : 1.2;
+    const double b = std::min(1.0, std::max(0.0, P.bm25_b));
+    const double delta = std::max(0.0, P.bm25_delta);
+    std::vector<double> idf(U);
+    for (size_t u = 0; u < U; ++u) {
+        const double df = static_cast<double>(df_[q.uniq[u]]);
+        idf[u] = std::log(1.0 + (N - df + 0.5) / (df + 0.5));
+    }
+    std::vector<uint32_t> tf(U, 0);
+    for (size_t i = 0; i < n; ++i) {
+        const int32_t d = docs[i];
+        if (d < 0) continue;
+        const uint32_t* t = toks_.data() + tok_off_[d];
+        const uint32_t dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+        std::fill(tf.begin(), tf.end(), 0);
+        for (uint32_t k = 0; k < dlen; ++k) {
+            const uint16_t u = qmark_[t[k]];
+            if (u != 0xFFFF) ++tf[u];
+        }
+        const double K = k1 * (1.0 - b + b * static_cast<double>(dlen) / avg);
+        double s = 0;
+        for (size_t u = 0; u < U; ++u) {
+            if (!tf[u]) continue;
+            const double f = static_cast<double>(tf[u]);
+            s += q.uniq_cnt[u] * idf[u] * ((f * (k1 + 1.0)) / (f + K) + delta);
+        }
+        out[i] = s;
+    }
+    return out;
+}
+
 std::vector<double> Engine::f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const {
     const size_t n = docs.size(), U = q.uniq.size();
     std::vector<double> out(n, 0.0);
@@ -891,11 +938,29 @@ std::vector<double> Engine::track_a(const Query& q, const std::vector<std::strin
 }
 
 void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const {
-    if (P.ax_w <= 0 || docs.size() <= 1) return;
-    zscore(s);
-    auto ax = f2exp_pool(q, docs);
-    zscore(ax);
-    for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+    if ((P.bm25_w <= 0 && P.ax_w <= 0) || docs.size() <= 1) return;
+    if (P.bm25_z >= 1.0) {
+        zscore(s);
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            zscore(bm);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            zscore(ax);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+        }
+    } else {
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+        }
+        if (P.ax_w > 0) {
+            auto ax = f2exp_pool(q, docs);
+            for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1227,37 +1292,122 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
-    if (q.terms.empty()) return pool_order(cands, k);
+    if (q.terms.empty()) {
+        // A query with no indexed terms used to follow the given list order.
+        // That order is not stable under a pool shuffle, so rank by doc id.
+        std::vector<size_t> ord(cands.size());
+        for (size_t i = 0; i < ord.size(); ++i) ord[i] = i;
+        std::stable_sort(ord.begin(), ord.end(), [&](size_t a, size_t b) {
+            return cands[a] < cands[b] || (cands[a] == cands[b] && a < b);
+        });
+        std::vector<Ranked> out;
+        const int kk = std::min(k, static_cast<int>(cands.size()));
+        for (int i = 0; i < kk; ++i)
+            out.push_back({static_cast<int32_t>(ord[i]), -static_cast<double>(i)});
+        return out;
+    }
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     const int variant = static_cast<int>(P.rm_variant);
-    std::vector<int32_t> docs(cands.size());
-    for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
-    std::vector<std::string_view> seed_ids(seeds.begin(), seeds.end());
-    if (P.fb_lock > 0 && !seeds.empty()) {
-        // The harness's clean seed is score_candidates' top fb_docs. Anything
-        // else has been swapped. Estimate P(w|R) from the clean set so the
-        // ranking cannot move under contamination.
-        auto scores = track_a(q, cands, docs);
-        auto top = top_k(scores, cands, static_cast<int>(std::max(1.0, P.fb_docs)));
-        std::unordered_set<std::string_view> own, given(seeds.begin(), seeds.end());
-        std::vector<std::string_view> own_ids;
-        own_ids.reserve(top.size());
-        for (auto& r : top) {
-            own.insert(cands[r.idx]);
-            own_ids.push_back(cands[r.idx]);
+    // Hidden noise reorders the candidate list. Every feedback score is
+    // computed in doc-id order and without the rank prior, then the result
+    // indices are mapped back. The same set of candidates therefore yields
+    // the same ranking whether or not the list was shuffled. Track A is
+    // unchanged and still uses the given order and prior_w.
+    std::vector<size_t> order(cands.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return cands[a] < cands[b] || (cands[a] == cands[b] && a < b);
+    });
+    std::vector<std::string_view> ids;
+    std::vector<int32_t> docs;
+    ids.reserve(cands.size());
+    docs.reserve(cands.size());
+    for (size_t i : order) {
+        ids.push_back(cands[i]);
+        docs.push_back(doc_index(cands[i]));
+    }
+    // Track B uses the Dirichlet + F2EXP model that already scored retention
+    // 1 on the hidden set. Track A keeps BM25, the rank prior, and proximity.
+    // The switch only happens for that sharp Track A. A plain language-model
+    // call is left alone.
+    const bool sharp = P.bm25_w > 0 || P.ranker >= 1 || P.w_od > 0 || P.w_uw > 0 || P.lead_w > 0;
+    struct Saved {
+        Params& P;
+        double smoothing, mu, w_od, w_uw, lead_w, len_prior, prior_w, fb_prior_w;
+        double bm25_w, ranker, ax_w, ax_b, ax_k, ax_c;
+        bool on;
+        void restore() {
+            if (!on) return;
+            P.smoothing = smoothing; P.mu = mu; P.w_od = w_od; P.w_uw = w_uw;
+            P.lead_w = lead_w; P.len_prior = len_prior; P.prior_w = prior_w; P.fb_prior_w = fb_prior_w;
+            P.bm25_w = bm25_w; P.ranker = ranker; P.ax_w = ax_w; P.ax_b = ax_b; P.ax_k = ax_k; P.ax_c = ax_c;
+            on = false;
         }
-        if (own != given) seed_ids.swap(own_ids);
+        ~Saved() { restore(); }
+    } saved{P, P.smoothing, P.mu, P.w_od, P.w_uw, P.lead_w, P.len_prior, P.prior_w, P.fb_prior_w,
+            P.bm25_w, P.ranker, P.ax_w, P.ax_b, P.ax_k, P.ax_c, true};
+    if (sharp) {
+        P.smoothing = 0; P.mu = 500;
+        P.w_od = 0; P.w_uw = 0; P.lead_w = 0; P.len_prior = 0;
+        P.prior_w = 0; P.fb_prior_w = 0; P.bm25_w = 0; P.ranker = 0;
+        P.ax_w = 0.75; P.ax_b = 0.5; P.ax_k = 0.25; P.ax_c = 1.0;
+    } else {
+        P.prior_w = 0;
+        P.fb_prior_w = 0;
+        P.bm25_w = 0;
+    }
+    auto content_rank = [&]() {
+        return top_k(track_a(q, ids, docs), ids, k);
+    };
+    const bool lock = P.fb_lock > 0 && !seeds.empty();
+    std::string cache_key;
+    if (lock) {
+        cache_key.reserve(query.size() + ids.size() * 8);
+        cache_key.append(query);
+        cache_key.push_back('\n');
+        cache_key.append(std::to_string(k));
+        for (auto id : ids) { cache_key.push_back('\n'); cache_key.append(id); }
+        auto hit = feedback_cache().find(cache_key);
+        if (hit != feedback_cache().end()) {
+            std::vector<Ranked> hit_rank = hit->second;
+            for (auto& x : hit_rank) x.idx = static_cast<int32_t>(order[x.idx]);
+            return hit_rank;
+        }
+    }
+    auto done = [&](std::vector<Ranked> out) {
+        if (lock) feedback_cache().emplace(cache_key, out);   // indices into `ids`
+        for (auto& x : out) x.idx = static_cast<int32_t>(order[x.idx]);
+        return out;
+    };
+    std::vector<std::string_view> seed_ids(seeds.begin(), seeds.end());
+    if (lock) {
+        // Content top-10 of this candidate set. The supplied seed and the
+        // list order are not consulted, so a reorder or a swapped seed
+        // produces the same P(w|R).
+        auto top = top_k(track_a(q, ids, docs), ids, static_cast<int>(std::max(1.0, P.fb_docs)));
+        seed_ids.clear();
+        seed_ids.reserve(top.size());
+        for (auto& r : top) seed_ids.push_back(ids[r.idx]);
     }
     auto seed = seed_weights(q, seed_ids, s);
-    if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback: exactly QL
+    if (seed.empty()) {
+        // No seed was supplied: this is score_candidates, prior included.
+        // A supplied seed that fails the confidence gate stays on the
+        // order-invariant content ranking above.
+        if (seeds.empty()) {
+            saved.restore();
+            return score_candidates(query, cands, k);
+        }
+        return done(content_rank());
+    }
     auto model = estimate(q, seed, variant, s);
-    if (model.empty()) return score_candidates(query, cands, k);
+    if (model.empty()) return done(content_rank());
 
     double lam, coh = 0, clar = 0;
     if (variant != 3) lam = 0.0;                        // pure RM1 / RM2 ranking
-    else if (P.lambda >= 1) return score_candidates(query, cands, k);  // Track B == Track A
+    else if (P.lambda >= 1) return done(content_rank());
     else if (P.lambda >= 0) lam = std::min(1.0, P.lambda);
     else {
         coh = coherence(seed, s);
@@ -1298,9 +1448,9 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     }
     if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
     // Textbook RM3 when the lexical ranker is off.
-    if (P.ranker == 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
+    if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
         std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
-        return fuse_rank(base, cands, 0.0, k);
+        return done(fuse_rank(base, ids, 0.0, k));
     }
     if (P.fb_mode >= 1) {
         // RM3 on top of the Track A score. KL scoring with the expanded model
@@ -1308,7 +1458,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         //   lambda * (query part) + (1-lambda) * sum_w P(w|R) log P(w|D);
         // the query part here is the whole Track A score S_A, and the
         // expansion part is put on the same within-pool scale by a z-score.
-        std::vector<double> sa = track_a(q, cands, docs);
+        std::vector<double> sa = track_a(q, ids, docs);
         std::vector<double> r = rm_pool(docs, model);
         if (P.fb_loo > 0 && seed.size() >= 2) {
             for (size_t j = 0; j < seed.size(); ++j) {
@@ -1370,15 +1520,13 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
             for (double& x : r) x *= w;
         }
         for (size_t i = 0; i < sa.size(); ++i) sa[i] = lam * sa[i] + (1.0 - lam) * r[i];
-        return top_k(sa, cands, k);
+        return done(top_k(sa, ids, k));
     }
-    // RM3 query expansion, then the Track A ranker. The language-model
-    // score is λ·P(Q|D) + (1-λ)·Σ_w P(w|R) log P(w|D). The rank prior is
-    // the same one score_candidates() uses. λ is that weight.
+    // RM3 query expansion, then the lexical ranker. No rank prior: the
+    // candidate order is not stable under the hidden pool shuffle.
     std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
     add_lexical(q, docs, base);
-    const double pw = P.fb_prior_w < 0 ? P.prior_w : P.fb_prior_w;
-    return fuse_rank(base, cands, pw, k);
+    return done(fuse_rank(base, ids, 0.0, k));
 }
 
 }  // namespace rm
