@@ -18,10 +18,9 @@ implementation in _feedback_py.py, so the entrypoints always work.
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
   Track A  Dirichlet query likelihood (mu=500) plus a z-scored F2EXP
            feature (weight 0.75, s=0.5, k=0.25).
-  Track B  RM3 inside that language model: 0.2 * query + 0.8 * RM1.
-           If no seed document holds at least 0.40 of the posterior,
-           feedback returns the exact Track A ranking. A seed that is not
-           the Track A top-10 is replaced by that top-10.
+  Track B  RM3 inside that language model: 0.9 * query + 0.1 * RM1,
+           on every query. A seed that is not the Track A top-10 is
+           replaced by that top-10.
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -45,7 +44,7 @@ _FLAG_SETS = [
 
 # 4 Oct 17:14 upload: Track A 0.5328, Track B 0.5339, retention 1.
 # Dirichlet QL (mu=500) + z-scored F2EXP (0.75, s=0.5, k=0.25).
-# RM3 weight on the original query is 0.2. A flat seed returns Track A.
+# RM3 weight on the original query is 0.9. Feedback runs on every query.
 # A seed that is not the Track A top-10 is replaced by that top-10.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
@@ -59,11 +58,11 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
-    "lambda": 0.9,
+    "lambda": 0.8,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0.25, "fb_conf": 0.40, "fb_anchor_exp": 1.0,
+    "fb_cov": 0, "fb_conf": 0, "fb_anchor_exp": 1.0,
     "fb_lock": 1,
 }
 
