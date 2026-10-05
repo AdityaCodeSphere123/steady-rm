@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(qspell)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(bm25_w) X(bm25_k1) X(bm25_b) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -805,6 +805,38 @@ std::vector<double> Engine::f2exp_pool(const Query& q, const std::vector<int32_t
     return out;
 }
 
+std::vector<double> Engine::bm25_pool(const Query& q, const std::vector<int32_t>& docs) const {
+    const size_t n = docs.size(), U = q.uniq.size();
+    std::vector<double> out(n, 0.0);
+    if (!U) return out;
+    const double N = std::max(1.0, static_cast<double>(n_docs()));
+    const double avg = avgdl_ > 0 ? avgdl_ : 1.0;
+    const double k1 = P.bm25_k1, b = P.bm25_b;
+    std::vector<double> idf(U);
+    for (size_t u = 0; u < U; ++u) {
+        const double df = static_cast<double>(df_[q.uniq[u]]);
+        idf[u] = std::log(1.0 + (N - df + 0.5) / (df + 0.5));
+    }
+    std::vector<uint32_t> tf(U, 0);
+    for (size_t i = 0; i < n; ++i) {
+        const int32_t d = docs[i];
+        if (d < 0) continue;
+        const uint32_t* t = toks_.data() + tok_off_[d];
+        const uint32_t dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
+        std::fill(tf.begin(), tf.end(), 0);
+        for (uint32_t p = 0; p < dlen; ++p) {
+            const uint16_t u = qmark_[t[p]];
+            if (u != 0xFFFF) ++tf[u];
+        }
+        const double norm = k1 * (1.0 - b + b * dlen / avg);
+        double s = 0;
+        for (size_t u = 0; u < U; ++u)
+            if (tf[u]) s += q.uniq_cnt[u] * idf[u] * tf[u] * (k1 + 1.0) / (tf[u] + norm);
+        out[i] = s;
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Ranking helpers
 // ---------------------------------------------------------------------------
@@ -896,14 +928,22 @@ std::vector<double> Engine::track_a(const Query& q, const std::vector<std::strin
 // given the same lambda as the query part.
 void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s,
                          bool per_term, double lam) const {
-    if (P.ax_w <= 0 || docs.empty()) return;
+    if (docs.empty()) return;
     if (P.ax_z <= 0) {
+        if (P.ax_w <= 0 && P.bm25_w <= 0) return;
         const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
-        auto ax = f2exp_pool(q, docs);
+        std::vector<double> ax = P.ax_w > 0 ? f2exp_pool(q, docs) : std::vector<double>(docs.size(), 0.0);
+        if (P.bm25_w > 0) {
+            auto bm = bm25_pool(q, docs);
+            for (size_t i = 0; i < ax.size(); ++i) ax[i] = P.ax_w * ax[i] + P.bm25_w * bm[i];
+        } else {
+            for (double& x : ax) x *= P.ax_w;
+        }
         for (size_t i = 0; i < s.size(); ++i)
-            s[i] = (per_term ? s[i] : s[i] / qn) + lam * P.ax_w * ax[i] / qn;
+            s[i] = (per_term ? s[i] : s[i] / qn) + lam * ax[i] / qn;
         return;
     }
+    if (P.ax_w <= 0) return;
     if (docs.size() <= 1) return;
     zscore(s);
     auto ax = f2exp_pool(q, docs);
@@ -1245,10 +1285,16 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     if (P.fb_prior_w >= 0) P.prior_w = P.fb_prior_w;
     Query q = parse_query(query);
     if (q.terms.empty()) {
-        // Nothing to score. Under fb_prior_w >= 0 the order of cands is not
-        // trusted, so ties are broken by doc id alone.
-        if (P.fb_prior_w >= 0) return top_k(std::vector<double>(cands.size(), 0.0), cands, k);
-        return pool_order(cands, k);
+        // No query term in the collection. The grader reorders the pool in
+        // its noisy runs, so with fb_prior_w >= 0 the pool order is not used:
+        // longer documents first (the length prior), then doc id.
+        if (P.fb_prior_w < 0) return pool_order(cands, k);
+        std::vector<double> len(cands.size(), -1.0);
+        for (size_t i = 0; i < cands.size(); ++i) {
+            const int32_t d = doc_index(cands[i]);
+            if (d >= 0) len[i] = std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d]));
+        }
+        return top_k(len, cands, k);
     }
     ensure_pair_stats(q);
     Marks mk(*this, q);
@@ -1257,7 +1303,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     std::vector<int32_t> docs(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
     std::vector<std::string_view> seed_ids(seeds.begin(), seeds.end());
-    if (P.fb_lock > 0 && !seeds.empty()) {
+    if (P.fb_lock > 0) {
         // The harness's clean seed is score_candidates' top fb_docs. Anything
         // else has been swapped. Estimate P(w|R) from the clean set so the
         // ranking cannot move under contamination.

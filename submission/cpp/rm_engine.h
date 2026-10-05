@@ -65,6 +65,10 @@ struct Params {
     // 0: add on a fixed scale, (log P(Q|D) + ax_w * F2EXP) / |Q|, so a
     // document's score does not depend on which other documents are in the pool.
     double ax_z = 1.0;
+    // BM25 added on the same fixed scale as F2EXP (ax_z = 0 only):
+    // + bm25_w * BM25(Q, D) / |Q|. Pool order and pool contents do not
+    // change a document's score.
+    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.75;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -220,6 +224,7 @@ private:
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
     std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
+    std::vector<double> bm25_pool(const Query& q, const std::vector<int32_t>& docs) const;
     void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s,
                      bool per_term = false, double lam = 1.0) const;
 
