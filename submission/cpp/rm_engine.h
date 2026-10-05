@@ -69,9 +69,6 @@ struct Params {
     // + bm25_w * BM25(Q, D) / |Q|. Pool order and pool contents do not
     // change a document's score.
     double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.75;
-    // 1: relevance_model_feedback() runs the dca37a7 ranker (retention 1 on
-    // the hidden set) instead of the Track A knobs.
-    double fb_stable = 0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
