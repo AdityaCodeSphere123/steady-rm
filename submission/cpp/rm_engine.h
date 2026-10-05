@@ -61,8 +61,6 @@ struct Params {
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
     // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
     double ax_w = 0.0;
-    // BM25 z-fused into Track A when bm25_z >= 1. bm25_w = 0 leaves it off.
-    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.4, bm25_delta = 0.25, bm25_z = 1.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -217,7 +215,6 @@ private:
     std::vector<double> score_pool(const Query& q, const std::vector<int32_t>& docs,
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
-    std::vector<double> bm25_pool(const Query& q, const std::vector<int32_t>& docs) const;
     std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
     void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const;
 
