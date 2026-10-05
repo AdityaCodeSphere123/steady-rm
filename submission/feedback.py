@@ -68,7 +68,7 @@ PARAMS: Dict[str, float] = {
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0.25, "fb_conf": 0.60, "fb_anchor_exp": 1.0,
+    "fb_cov": 0.25, "fb_conf": 0.30, "fb_anchor_exp": 1.0,
     "fb_lock": 1,
 }
 
