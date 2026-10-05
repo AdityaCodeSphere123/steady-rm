@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(qspell)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -890,8 +890,21 @@ std::vector<double> Engine::track_a(const Query& q, const std::vector<std::strin
     return fuse_scores(s, P.prior_w);
 }
 
-void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const {
-    if (P.ax_w <= 0 || docs.size() <= 1) return;
+// s holds the LM score: summed over query terms when per_term is false
+// (Track A), already divided by |Q| when true (feedback, which mixes it as
+// lambda * query part + (1-lambda) * RM). With ax_z = 0 the F2EXP term is
+// given the same lambda as the query part.
+void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s,
+                         bool per_term, double lam) const {
+    if (P.ax_w <= 0 || docs.empty()) return;
+    if (P.ax_z <= 0) {
+        const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
+        auto ax = f2exp_pool(q, docs);
+        for (size_t i = 0; i < s.size(); ++i)
+            s[i] = (per_term ? s[i] : s[i] / qn) + lam * P.ax_w * ax[i] / qn;
+        return;
+    }
+    if (docs.size() <= 1) return;
     zscore(s);
     auto ax = f2exp_pool(q, docs);
     zscore(ax);
@@ -1226,8 +1239,17 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
 std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
+    // The rank prior reads the order of cands. For the whole call (seed
+    // lock, fallback to score_candidates, final ranking) it is fb_prior_w.
+    struct Restore { double& v; double saved; ~Restore() { v = saved; } } restore{P.prior_w, P.prior_w};
+    if (P.fb_prior_w >= 0) P.prior_w = P.fb_prior_w;
     Query q = parse_query(query);
-    if (q.terms.empty()) return pool_order(cands, k);
+    if (q.terms.empty()) {
+        // Nothing to score. Under fb_prior_w >= 0 the order of cands is not
+        // trusted, so ties are broken by doc id alone.
+        if (P.fb_prior_w >= 0) return top_k(std::vector<double>(cands.size(), 0.0), cands, k);
+        return pool_order(cands, k);
+    }
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
@@ -1376,9 +1398,8 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     // score is λ·P(Q|D) + (1-λ)·Σ_w P(w|R) log P(w|D). The rank prior is
     // the same one score_candidates() uses. λ is that weight.
     std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
-    add_lexical(q, docs, base);
-    const double pw = P.fb_prior_w < 0 ? P.prior_w : P.fb_prior_w;
-    return fuse_rank(base, cands, pw, k);
+    add_lexical(q, docs, base, true, lam);
+    return fuse_rank(base, cands, P.prior_w, k);
 }
 
 }  // namespace rm
