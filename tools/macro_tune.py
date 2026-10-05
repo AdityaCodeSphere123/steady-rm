@@ -26,11 +26,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "macro_tune_out.txt")
 RESULT = os.path.join(ROOT, "macro_tune_result.json")
 
-def ticks(lo, hi, step):
-    n = int(round((hi - lo) / step))
-    return [round(lo + i * step, 4) for i in range(n + 1)]
-
-
 # Trailing comma matters: ("scifact") is a string, not a one-item tuple.
 SETS = ("scifact", "antique")
 WEIGHT = {"scifact": 1.0, "antique": 1.0}

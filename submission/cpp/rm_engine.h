@@ -41,23 +41,18 @@ struct Params {
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
     double uw_window = 8;
-    // A1 idea, as a field LM: the first lead_len tokens (the title / lead
-    // sentence) form a second document model mixed into P(q|D):
+    // First lead_len tokens as a second document model:
     //   P(q|D) = (1-lead_w) P_body(q|D) + lead_w P_lead(q|D)
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
-    // Document-length prior P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
+    // P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
     double len_prior = 0.0;
-    // A1's query-length rule (retrieve() dropped the title bonus on long
-    // queries): past longq_n terms, lead_w and len_prior are scaled by
-    // longq_n/|Q|. Document-like queries (ArguAna) are not helped by
-    // title matching or a length prior. 0 = off.
+    // Past longq_n query terms, scale lead_w and len_prior by longq_n/|Q|. 0 = off.
     double longq_n = 0.0;
     // Rank prior from the order of candidate_doc_ids, fused by z-score.
     double prior_w = 0.0, prior_k = 60;
-    // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
-    // 1 = off. Track B lambda stays 1 so C remains 1.
+    // RM3 from the first pool_docs of candidate_doc_ids. 1 = off.
     double pool_lambda = 1.0, pool_docs = 8;
-    // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
+    // 0 = Dirichlet/JM query likelihood. 1 = F2EXP (Fang & Zhai).
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
     // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
     double ax_w = 0.0;
@@ -86,48 +81,34 @@ struct Params {
     double agree_gamma = 0.0;    // outlier-seed down-weighting (0 off)
     double lambda = 0.5;         // RM3 weight on the query; <0 = adaptive
     double lambda_min = 0.45, lambda_max = 0.85;
-    // A1 idea: tilt lambda by query length (long queries need less expansion).
-    //   lambda += lam_qlen_slope * (|Q| - lam_qlen_pivot), clamped to [0, 0.95]
+    // lambda += lam_qlen_slope * (|Q| - lam_qlen_pivot), clamped to [0, 0.95].
     double lam_qlen_slope = 0.0, lam_qlen_pivot = 3;
-    // A1 "document-as-query" rule, made smooth: past qlen_shrink terms the
-    // expansion weight (1-lambda) is scaled by qlen_shrink/|Q| (0 = off).
-    // Long queries (ArguAna-style) already say what they mean.
+    // Past qlen_shrink terms, scale (1-lambda) by qlen_shrink/|Q|. 0 = off.
     double qlen_shrink = 0.0;
-    // Few feedback documents = high-variance relevance model: with m < n
-    // usable seed docs, (1-lambda) is scaled by m/small_seed_n (0 = off).
-    // The harness always passes 10, so this only engages on hand-picked sets.
+    // With m < small_seed_n usable seed docs, scale (1-lambda) by m/n. 0 = off.
     double small_seed_n = 0.0;
-    // Seed-independent confidence gate (query-performance prediction on the
-    // candidate POOL, never on the seed): g = mean z-score of the pool's top
-    // 10 by query likelihood. Low g = flat first pass = risky feedback:
+    // g = mean z-score of the pool's top 10 by query likelihood.
     //   lambda += qpp_w * clamp((qpp_hi - g) / (qpp_hi - qpp_lo), 0, 1)
     double qpp_w = 0.0, qpp_lo = 1.2, qpp_hi = 1.9;
     double coh_w = 0.65;         // adaptive: quality = coh_w*coherence + (1-coh_w)*clarity
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
-    double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
     // How the relevance model enters the Track A ranker:
-    //   0  RM3 inside the language-model part, then z-score / prior
-    //   1  score = lambda * S_A(D) + (1-lambda) * z(sum_w P(w|R) log P(w|D)),
-    //      S_A = the final score_candidates() score, z = within-pool z-score.
+    //   0  RM3 inside the language-model part
+    //   1  score = lambda * S_A(D) + (1-lambda) * scaled sum_w P(w|R) log P(w|D)
     double fb_mode = 0;
-    double fb_rm_w = 0.2;        // unused (kept so old PARAMS dicts still load)
-    // Leave-one-out: a candidate that is itself a seed document is scored
-    // with P(w|R) estimated from the other seed documents, so a seed doc
-    // cannot lift itself (a noisy seed doc otherwise promotes itself).
+    // A seed document is scored with P(w|R) estimated from the other seeds.
     double fb_loo = 0;
     // Seed weights P(D|Q) from Dirichlet query likelihood even when the
     // Track A ranker is F2EXP (ranker=1); F2EXP is not a probability.
     double fb_seed_ql = 0;
     // fb_mode 1 scale of the expansion term:
-    //   0  z-score (a noisy seed is forced up to one standard deviation)
-    //   1  divide by the pool std of log P(Q|D)/|Q|
-    //   >=2  center and divide by fb_scale (8 ≈ the 13:04 residual size)
+    //   0    z-score
+    //   1    divide by the pool std of log P(Q|D)/|Q|
+    //   >=2  center and divide by fb_scale
     double fb_scale = 8;
-    // After scaling, multiply the relevance vector by max(corr, 0)^fb_corr_pow,
-    // where corr is its correlation with the Track A scores on this pool.
-    // A seed that points the other way (full replacement, pool tail) shrinks
-    // toward Track A. 0 leaves the vector unchanged.
+    // Multiply the relevance vector by max(corr, 0)^fb_corr_pow, where corr
+    // is its correlation with the Track A scores. 0 leaves it unchanged.
     double fb_corr_pow = 0;
     // Seed doc query coverage = (query tokens found in the doc) / |Q|.
     // fb_cov > 0 drops docs below that floor. fb_anchor_exp > 0 multiplies

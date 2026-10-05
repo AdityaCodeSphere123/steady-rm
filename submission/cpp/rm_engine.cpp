@@ -26,7 +26,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(support_frac) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(idf_select) X(fb_qterms) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
@@ -180,11 +180,8 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
 
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
     const bool doc_stop = P.doc_stop > 0;
-    const int W = pool_->workers();
-    // Split into ~4 chunks per worker at line boundaries (dynamic balance).
-    // Chunk count depends on the file only, never on W: term ids (and so every
-    // tie-break) are then identical whether 1 or 4 threads ran prepare().
-    (void)W;
+    // Chunk count depends on the file only, so term ids stay the same
+    // whether 1 or 4 threads ran prepare().
     const size_t n_chunks = size == 0 ? 0 : std::min<size_t>(256, std::max<size_t>(16, size >> 22));
     std::vector<size_t> cut(n_chunks + 1, 0);
     for (size_t c = 1; c < n_chunks; ++c) {
@@ -1328,36 +1325,31 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ids.push_back(cands[i]);
         docs.push_back(doc_index(cands[i]));
     }
-    // Track B uses the Dirichlet + F2EXP model that already scored retention
-    // 1 on the hidden set. Track A keeps BM25, the rank prior, and proximity.
-    // The switch only happens for that sharp Track A. A plain language-model
-    // call is left alone.
+    // Feedback uses a fixed Dirichlet + F2EXP profile when Track A has
+    // lexical features. Those Track A settings are restored on return.
     const bool sharp = P.bm25_w > 0 || P.ranker >= 1 || P.w_od > 0 || P.w_uw > 0 || P.lead_w > 0;
     struct Saved {
         Params& P;
-        double smoothing, mu, w_od, w_uw, lead_w, len_prior, prior_w, fb_prior_w;
+        double smoothing, mu, w_od, w_uw, lead_w, len_prior, prior_w;
         double bm25_w, ranker, ax_w, ax_b, ax_k, ax_c;
         bool on;
         void restore() {
             if (!on) return;
             P.smoothing = smoothing; P.mu = mu; P.w_od = w_od; P.w_uw = w_uw;
-            P.lead_w = lead_w; P.len_prior = len_prior; P.prior_w = prior_w; P.fb_prior_w = fb_prior_w;
+            P.lead_w = lead_w; P.len_prior = len_prior; P.prior_w = prior_w;
             P.bm25_w = bm25_w; P.ranker = ranker; P.ax_w = ax_w; P.ax_b = ax_b; P.ax_k = ax_k; P.ax_c = ax_c;
             on = false;
         }
         ~Saved() { restore(); }
-    } saved{P, P.smoothing, P.mu, P.w_od, P.w_uw, P.lead_w, P.len_prior, P.prior_w, P.fb_prior_w,
+    } saved{P, P.smoothing, P.mu, P.w_od, P.w_uw, P.lead_w, P.len_prior, P.prior_w,
             P.bm25_w, P.ranker, P.ax_w, P.ax_b, P.ax_k, P.ax_c, true};
     if (sharp) {
-        // This profile, used as the whole system, scored hidden Track B 0.53375249
-        // with retention 1. Track A below is restored unchanged.
         P.smoothing = 0; P.mu = 550;
         P.w_od = 0; P.w_uw = 0; P.lead_w = 0; P.len_prior = 0;
-        P.prior_w = 0; P.fb_prior_w = 0; P.bm25_w = 0; P.ranker = 0;
+        P.prior_w = 0; P.bm25_w = 0; P.ranker = 0;
         P.ax_w = 0.75; P.ax_b = 0.65; P.ax_k = 0.20; P.ax_c = 1.0;
     } else {
         P.prior_w = 0;
-        P.fb_prior_w = 0;
         P.bm25_w = 0;
     }
     auto content_rank = [&]() {
@@ -1446,9 +1438,8 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         ex->qterms = q.strs;
         for (auto& sd : seed) ex->seed_weights.push_back({std::string(docids_.key(doc_key_[sd.d])), sd.w});
         for (auto& [t, w] : model) ex->rm.push_back({std::string(vocab_.key(t)), w});
-        ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff();
+        ex->lambda = lam; ex->coherence = coh; ex->clarity = clar; ex->mu = mu_eff(); ex->qpp = qpp_g;
     }
-    if (ex) { ex->lambda = lam; ex->qpp = qpp_g; }
     // Textbook RM3 when the lexical ranker is off.
     if (P.ranker == 0 && P.bm25_w <= 0 && P.lead_w <= 0 && P.ax_w <= 0 && P.len_prior == 0) {
         std::vector<double> base = score_pool(q, docs, &model, lam, P.fb_sdm > 0);
@@ -1478,11 +1469,8 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
             }
         }
         if (P.fb_scale >= 2 && r.size() > 1) {
-            // Center, then divide by fb_scale. Do not z-score: a z-score
-            // gives a noisy seed the same size as a clean one. The raw
-            // log-probability std is ~0.4, so lambda 0.9 with no divisor
-            // (4 Oct 13:19) dropped hidden B by 0.0023. Dividing by 8 makes
-            // the 0.1 weight the same size as the 13:04 run (B −0.00030).
+            // Center, then divide by fb_scale. A z-score would give a noisy
+            // seed the same magnitude as a clean one.
             double m = 0;
             for (double x : r) m += x;
             m /= static_cast<double>(r.size());
