@@ -16,12 +16,17 @@ building or loading fails, the module falls back to the pure-Python
 implementation in _feedback_py.py, so the entrypoints always work.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Dirichlet query likelihood (mu=550) plus a z-scored F2EXP
-           feature (weight 0.75, s=0.65, k=0.20).
-  Track B  RM3 inside that language model: 0.2 * query + 0.8 * RM1.
-           If no seed document holds at least 0.40 of the posterior,
-           feedback returns the Track A ranking. A seed that is not the
-           Track A top-10 is replaced by that top-10.
+  Track A  Two-stage smoothed unigram query likelihood (Dirichlet mu=550,
+           then 0.2 of P(w|C)), with a lead-window field model (first 24
+           tokens, weight 0.05), a document-length prior (0.4 log|D|) and
+           an F2EXP feature (weight 2), all on a fixed per-document scale.
+           A candidate-rank prior (0.12, k=7) is fused on top.
+  Track B  RM3 on the same model: 0.9 * Track A score + 0.1 * RM1. The
+           rank prior is off for the whole call. If no seed document holds
+           at least 0.30 of the posterior, feedback returns that model's
+           ranking. A seed that is not its top-10 is replaced by that
+           top-10. No score depends on the order or the other members of
+           candidate_doc_ids.
 RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -43,19 +48,22 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# 4 Oct 17:14 upload: Track A 0.5328, Track B 0.5339, retention 1.
-# Dirichlet QL (mu=550) + z-scored F2EXP (0.75, s=0.65, k=0.20).
-# RM3 weight on the original query is 0.2. A flat seed (heaviest weight
-# below 0.40) returns Track A. A seed that is not the Track A top-10 is
-# replaced by that top-10.
+# 5 Oct 12:19 upload (Dirichlet mu=550 + z-scored F2EXP 0.75): Track A
+# 0.53299 / 0.45417, Track B 0.53375, retention 1. Every score is now on a
+# fixed per-document scale (ax_z=0): the z-scores moved Track B's top 10
+# on 14-47% of queries when the pool was reordered or a few documents were
+# added or dropped. Over 11 local collections this point is Track A
+# +0.0052 nDCG / +0.0032 MAP and Track B +0.0050 against the 12:19 upload
+# (prior_w=0); the rank prior adds +0.0013 to Track A. Rank prior is
+# Track A only (fb_prior_w=0).
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 0, "jm_lambda": 0.50, "mu": 550,
+    "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0, "lead_len": 8, "lead_mu": 60,
-    "len_prior": 0,
-    "prior_w": 0, "prior_k": 4,
-    "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 0.75,
+    "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
+    "len_prior": 0.4,
+    "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
+    "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
     "rm_variant": 3,
     "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,

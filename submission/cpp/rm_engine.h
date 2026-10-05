@@ -61,6 +61,10 @@ struct Params {
     double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
     // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
     double ax_w = 0.0;
+    // 1: z-score the LM score and F2EXP within the pool before adding.
+    // 0: add on a fixed scale, (log P(Q|D) + ax_w * F2EXP) / |Q|, so a
+    // document's score does not depend on which other documents are in the pool.
+    double ax_z = 1.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -216,7 +220,8 @@ private:
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
     std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
-    void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const;
+    void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s,
+                     bool per_term = false, double lam = 1.0) const;
 
     bool ready_ = false;
     std::string path_;

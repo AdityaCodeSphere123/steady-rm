@@ -121,7 +121,11 @@ def main():
             assert all(r[i][1] >= r[i + 1][1] for i in range(len(r) - 1))
     assert fb.score_candidates("apple", [], 10) == []
     assert fb.relevance_model_feedback("", ["d1"], ["d1", "d2"], 10)  # empty query -> pool order
-    assert fb.relevance_model_feedback("apple", [], ["d1", "d2"], 2) == fb.score_candidates("apple", ["d1", "d2"], 2)
+    # Empty seed -> the base ranking, without the candidate-order prior (fb_prior_w).
+    empty = fb.relevance_model_feedback("apple", [], ["d1", "d2"], 2)
+    fb.set_params(prior_w=fb.PARAMS["fb_prior_w"])
+    assert empty == fb.score_candidates("apple", ["d1", "d2"], 2)
+    fb.set_params(prior_w=fb.PARAMS["prior_w"])
 
     # 5. Call-order independence: identical output with or without a prior score_candidates().
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)
