@@ -45,7 +45,7 @@ _FLAG_SETS = [
 # SPUD + lead-field + SDM query likelihood (Track A), tuned on 2*SciFact +
 # ANTIQUE. Track B: RM3 on the Track A score (fb_mode 1), lambda 0.95,
 # expansion scale 4, estimated from the supplied seed (fb_lock off).
-# best so far: 0.53633065	0.45904990	0.53655742	0.99990104	0.99815275
+# best so far: 0.53808918	0.46063143	0.53818768	0.99969942	0.99829669
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "qspell": 0,
