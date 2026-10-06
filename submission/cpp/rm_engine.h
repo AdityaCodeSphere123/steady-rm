@@ -140,7 +140,10 @@ struct Params {
     double fb_lock = 0;
     double fb_mass = 0;
     double fb_mass_pow = 1;
-    double fdm_gap = 0, fdm_w = 0;   // full-dependence pairs: max query gap, weight
+    double fdm_gap = 0, fdm_w = 0;
+    double prox_w = 0, prox_a = 0.3, prox_s = 1;   // MinDist prior weight, alpha, distance scale
+    double tok_keep1 = 0, tok_hyph = 0;   // tokeniser: keep 1-digit tokens; hyphen joining
+    double qw_idf = 0;               // query model weight idf^qw_idf (0: uniform)   // full-dependence pairs: max query gap, weight
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 

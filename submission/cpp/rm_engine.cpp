@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay) X(fb_mass) X(fb_mass_pow) X(fdm_gap) X(fdm_w)
+    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay) X(fb_mass) X(fb_mass_pow) X(fdm_gap) X(fdm_w) X(qw_idf) X(prox_w) X(prox_a) X(prox_s) X(tok_keep1) X(tok_hyph)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -59,30 +59,50 @@ static const bool T_INIT = [] {
     return true;
 }();
 
+// tok_keep1: 1 keeps single-digit tokens. tok_hyph: 1 joins a-b into "ab",
+// 2 emits the parts and also the joined form. Set from Params before use.
+static int g_tok_keep1 = 0, g_tok_hyph = 0;
+
 template <typename Fn>
 static void each_surface(std::string_view text, Fn&& emit) {
     (void)T_INIT;
     char tok[256];
     size_t tn = 0;
     bool overflow = false;
-    std::string acro;
+    std::string acro, joined;
+    int parts = 0;
     auto flush_acro = [&] { if (acro.size() >= 2) emit(std::string_view(acro)); acro.clear(); };
     auto take = [&] {
         if (tn == 0 && !overflow) return;
         if (tn == 1 && tok[0] >= 'a' && tok[0] <= 'z') acro.push_back(tok[0]);
-        else { flush_acro(); if (tn > 1) emit(std::string_view(tok, tn)); }
+        else {
+            flush_acro();
+            if (tn > 1 || (g_tok_keep1 && tn == 1)) emit(std::string_view(tok, tn));
+        }
         tn = 0; overflow = false;
     };
-    for (unsigned char c : text) {
+    auto flush_joined = [&] {
+        if (parts >= 2 && joined.size() > 1) emit(std::string_view(joined));
+        joined.clear(); parts = 0;
+    };
+    const size_t L = text.size();
+    for (size_t i = 0; i < L; ++i) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
         if (T_ALNUM[c]) {
             if (tn < sizeof(tok)) tok[tn++] = static_cast<char>(T_LOWER[c]);
             else overflow = true;  // absurdly long run: truncated
+            if (g_tok_hyph >= 2) { joined.push_back(static_cast<char>(T_LOWER[c])); if (tn == 1) ++parts; }
+        } else if (g_tok_hyph && c == '-' && tn > 0 && i + 1 < L && T_ALNUM[static_cast<unsigned char>(text[i + 1])]) {
+            if (g_tok_hyph >= 2) take();   // emit the part; the joined form keeps growing
+            // tok_hyph 1: continue the same token across the hyphen
         } else {
             take();
+            if (g_tok_hyph >= 2) flush_joined();
             if (c != '.') flush_acro();
         }
     }
     take();
+    if (g_tok_hyph >= 2) flush_joined();
     flush_acro();
 }
 
@@ -109,6 +129,7 @@ struct Engine::Query {
     std::vector<uint16_t> slot_of_term;     // terms[i] -> slot in uniq
     std::vector<std::pair<uint16_t, uint16_t>> pairs;  // adjacent (slot a, slot b)
     std::vector<std::pair<uint64_t, uint64_t>> pair_cf;  // (cf ordered, cf unordered)
+    std::vector<double> qw;                 // per-slot query-model weight (1 = uniform)
     size_t n_adj = 0;                       // pairs[0, n_adj) are adjacent; the rest are FDM pairs
     size_t len() const { return terms.size(); }
 };
@@ -152,7 +173,9 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     std::string path = path_in;
     struct stat st{};
     if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) path += "/corpus.jsonl";
-    const double sig = P.stemmer * 10 + P.doc_stop;
+    g_tok_keep1 = static_cast<int>(P.tok_keep1);
+    g_tok_hyph = static_cast<int>(P.tok_hyph);
+    const double sig = P.stemmer * 10 + P.doc_stop + P.tok_keep1 * 100 + P.tok_hyph * 1000;
     if (ready_ && path == path_ && sig == tok_cfg_sig_) return true;  // idempotent
 
     int fd = open(path.c_str(), O_RDONLY);
@@ -419,6 +442,8 @@ uint32_t Engine::resolve_query_term(const std::string& surface, uint8_t stemmer)
 // ---------------------------------------------------------------------------
 Engine::Query Engine::parse_query(std::string_view qtext) {
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
+    g_tok_keep1 = static_cast<int>(P.tok_keep1);
+    g_tok_hyph = static_cast<int>(P.tok_hyph);
     std::vector<std::string> surf;
     each_surface(qtext, [&](std::string_view s) { surf.emplace_back(s); });
     const auto& stops = P.qstop_list >= 3 ? LUCENE_MINUS_WH
@@ -452,6 +477,19 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
         if (q.uniq.size() >= 0xFFF0) break;
     }
     q.n_adj = q.pairs.size();
+    q.qw.assign(q.uniq.size(), 1.0);
+    if (P.qw_idf != 0 && !q.uniq.empty()) {
+        // Query model P(w|Q) ∝ c(w,Q) * idf(w)^qw_idf, rescaled to keep sum c(w,Q).
+        const double N = n_docs();
+        double s = 0, c = 0;
+        for (size_t u = 0; u < q.uniq.size(); ++u) {
+            double idf = std::max(0.05, std::log((N + 1.0) / (df_[q.uniq[u]] + 0.5)));
+            q.qw[u] = std::pow(idf, P.qw_idf);
+            s += q.uniq_cnt[u] * q.qw[u];
+            c += q.uniq_cnt[u];
+        }
+        for (auto& w : q.qw) w *= c / s;
+    }
     if (P.fdm_gap >= 2 && P.fdm_w > 0 && q.terms.size() <= 16) {
         // Full dependence: non-adjacent pairs up to fdm_gap apart, unordered window only.
         const size_t G = static_cast<size_t>(P.fdm_gap);
@@ -674,8 +712,18 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         double lp = log_p(tf[u], dlen, pc, dvd);
         const double tl = tau > 0 ? tfd[u] : static_cast<double>(tfl[u]);
         if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (tl + lmu * pc) / (ll + lmu));
-        f.uni += q.uniq_cnt[u] * lp;
+        f.uni += q.uniq_cnt[u] * q.qw[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
+    }
+    if (P.prox_w > 0 && U >= 2) {
+        // Tao & Zhai (2007) MinDist proximity prior: log(a + exp(-min distance
+        // between occurrences of two different query terms)).
+        uint32_t md = 1u << 30;
+        for (size_t i = 1; i < s.hits.size(); ++i)
+            if (s.hits[i].second != s.hits[i - 1].second)
+                md = std::min(md, s.hits[i].first - s.hits[i - 1].first);
+        const double a = std::max(1e-6, P.prox_a);
+        f.uni += P.prox_w * (std::log(a + std::exp(-static_cast<double>(md) / std::max(1.0, P.prox_s))) - std::log(a));
     }
     if (!q.pairs.empty() && (P.w_od > 0 || P.w_uw > 0)) {
         const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
