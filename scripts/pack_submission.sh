@@ -52,5 +52,5 @@ fi
 rm -f "$OUT"
 ( cd "$STAGE" && zip -r -q "$OUT" . )
 echo "Wrote $OUT ($(du -h "$OUT" | awk '{print $1}'))"
-unzip -l "$OUT" | grep -E 'submission/(feedback\.py|adversarial_set\.json|_feedback_py\.py|cpp/rm_engine\.cpp)' 
+unzip -l "$OUT" | grep -E 'submission/(feedback\.py|adversarial_set\.json|cpp/rm_engine\.cpp)' 
 echo "files: $(unzip -l "$OUT" | tail -1)"
