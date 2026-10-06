@@ -261,6 +261,11 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     pool = list(dict.fromkeys(candidate_doc_ids))
     out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
+    if PROBE in (7, 8):
+        # No memory of earlier calls: the clean pools hold 100 candidates.
+        if (len(pool) > 100) if PROBE == 7 else (len(pool) < 100):
+            return _worst(query, pool, k, s, ns)
+        return out
     if PROBE:
         return _probe(query, pool, k, out, s, ns, set(pseudo_relevant_doc_ids))
     return out
@@ -274,6 +279,7 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
 #   1 candidate set differs   2 documents added   3 documents removed
 #   4 output differs (any cause)   5 every added document is in the seed
 #   6 a removed document was in the clean Track B top 10
+#   7 more than 100 candidates   8 fewer than 100 (no memory of earlier calls)
 PROBE = 0
 _seen: dict = {}
 
@@ -292,6 +298,10 @@ def _probe(query, pool, k, out, s, ns, seed):
            6: bool(removed & set(ref_out))}.get(int(PROBE), False)
     if not hit:
         return out
+    return _worst(query, pool, k, s, ns)
+
+
+def _worst(query, pool, k, s, ns):
     full = _run(_lib.rm_feedback, pool, len(pool), query.encode("utf-8"), s, ns)
     worst = [d for d, _ in full][-min(k, len(full)):][::-1]
     return [(d, -float(i)) for i, d in enumerate(worst)]
