@@ -13,17 +13,18 @@ sources are always rebuilt and a binary built elsewhere is never loaded
 (a -march=native binary from another CPU could crash the process). Building
 or loading failure raises; there is no Python implementation.
 
-Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h). One
-engine and one index; each track has its own parameter set.
-  Track A  PARAMS_A: F2EXP with a lead-window field (first 8 tokens) and
-           SDM proximity, z-fused with BM25+, plus a document-length
-           prior and a candidate-rank prior (0.12, k=7).
-  Track B  PARAMS: RM3 (lambda 0.85) over a two-stage smoothed query
-           likelihood (mu=550, 0.2 of P(w|C)) with a lead-window field
-           model and F2EXP, all on a fixed per-document scale. The seed is
-           this model's own top 10; if no seed document holds at least
-           0.20 of the posterior, the query-likelihood ranking is returned.
-RM_THREADS=n caps threads (max 4).
+Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
+  Track A  Query likelihood: two-stage smoothed unigram LM (Dirichlet
+           mu=400, then 0.2 of P(w|C)) plus sequential-dependence proximity
+           terms (ordered bigrams 0.10, unordered windows of 8 tokens 0.10),
+           mixed with a lead-window field LM (first 40 tokens, weight 0.15)
+           and a document-length prior (0.10 log|D|).
+  Track B  RM3 relevance feedback on the Track A model, one model: the
+           expanded query (lambda 0.85 original, 0.15 relevance model from
+           Track A's own top 10) is scored by the same query-likelihood
+           function. If no feedback document holds at least 0.20 of the
+           posterior, or lambda = 1, the result is score_candidates().
+Both tracks rerank the first 100 distinct candidates.
 """
 import ctypes
 import hashlib
@@ -43,49 +44,28 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# 5 Oct 12:19 upload (Dirichlet mu=550 + z-scored F2EXP 0.75): Track A
-# 0.53299 / 0.45417, Track B 0.53375, retention 1. Every score is now on a
-# fixed per-document scale (ax_z=0): the z-scores moved Track B's top 10
-# on 14-47% of queries when the pool was reordered or a few documents were
-# added or dropped. Over 11 local collections this point is Track A
-# +0.0052 nDCG / +0.0032 MAP and Track B +0.0050 against the 12:19 upload
-# (prior_w=0); the rank prior adds +0.0013 to Track A. The hidden noisy
-# runs reorder the pool: with the prior in feedback (fb_prior_w=-1)
-# retention fell to 0.99677, so Track B leaves it out (fb_prior_w=0) and
-# no Track B score reads the pool order. qspell=1 cost hidden Track A 0.009.
+# Language-model components only: BM25 and F2EXP (ax_w) and the
+# candidate-rank prior (prior_w) stay off. No score reads the pool order.
+# qspell=1 cost hidden Track A 0.009.
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "qspell": 0,
-    "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
-    "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0.10, "lead_len": 24, "lead_mu": 60,
-    "len_prior": 0.35,
-    "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
-    "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
+    "smoothing": 2, "jm_lambda": 0.20, "mu": 400,
+    "w_od": 0.10, "w_uw": 0.10, "uw_window": 8,
+    "lead_w": 0.15, "lead_len": 40, "lead_mu": 60,
+    "len_prior": 0.10,
+    "prior_w": 0, "prior_k": 7,
+    "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 0, "ax_z": 0,
     "rm_variant": 3,
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.85,
     "qlen_shrink": 0, "small_seed_n": 0,
-    "fb_sdm": 0,
+    "fb_sdm": 1,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
     "fb_cov": 0.0, "fb_conf": 0.20, "fb_anchor_exp": 0.5,
     "fb_lock": 1,
-}
-
-# Track A (score_candidates) uses the same engine with its own parameter
-# set: PARAMS overridden by PARAMS_A. This is the 5 Oct 16:52 model (commit
-# d1e6fc1, hidden Track A 0.53765 / 0.45920): an F2EXP field ranker with
-# SDM proximity, z-fused with BM25+. Feedback never reads PARAMS_A.
-PARAMS_A: Dict[str, float] = {
-    "jm_lambda": 0.3, "mu": 100,
-    "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 8,
-    "len_prior": 0.3,
-    "prior_w": 0.12, "prior_k": 7,
-    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
-    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "ax_z": 1,
 }
 
 _lib = None
@@ -145,9 +125,6 @@ def _declare(lib) -> None:
         "rm_get_param": ([c.c_char_p, F64], c.c_int),
         "rm_stats": ([c.c_char_p, c.c_int], c.c_int),
         "rm_score": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
-        "rm_score_a": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
-        "rm_set_param_a": ([c.c_char_p, c.c_double], c.c_int),
-        "rm_get_param_a": ([c.c_char_p, F64], c.c_int),
         "rm_feedback": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
         "rm_explain": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_char_p, c.c_int], c.c_int),
         "rm_relevance_model": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, c.c_char_p, c.c_int], c.c_int),
@@ -188,23 +165,15 @@ def backend() -> str:
 
 
 def set_params(**kw: float) -> None:
-    """Override feedback (Track B) parameters by name (tools/sweep.py)."""
+    """Override engine parameters by name (tools/sweep.py)."""
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
 
 
-def set_params_a(**kw: float) -> None:
-    """Override score_candidates (Track A) parameters by name."""
-    for k, v in kw.items():
-        if _lib.rm_set_param_a(k.encode(), float(v)) != 0:
-            raise KeyError(f"unknown parameter {k!r}")
-
-
-def get_param(name: str, track: str = "B") -> float:
+def get_param(name: str) -> float:
     v = ctypes.c_double()
-    fn = _lib.rm_get_param_a if track == "A" else _lib.rm_get_param
-    if fn(name.encode(), ctypes.byref(v)) != 0:
+    if _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
         raise KeyError(name)
     return v.value
 
@@ -273,7 +242,13 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
     """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
-    return _run(_lib.rm_score_a, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
+    return _run(_lib.rm_score, _pool(candidate_doc_ids), k, query.encode("utf-8"))
+
+
+def _pool(candidate_doc_ids: List[str]) -> List[str]:
+    """The candidates both tracks rank: the first POOL_CAP distinct ids."""
+    pool = list(dict.fromkeys(candidate_doc_ids))
+    return pool[:POOL_CAP] if POOL_CAP and len(pool) > POOL_CAP else pool
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
@@ -282,13 +257,8 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
     output is drawn from candidate_doc_ids only."""
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
-    full = list(dict.fromkeys(candidate_doc_ids))
-    pool = full[:POOL_CAP] if POOL_CAP and len(full) > POOL_CAP else full
+    pool = _pool(candidate_doc_ids)
     out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
-    if PROBE in (9, 10):
-        tail = set(full[100:])
-        hit = bool(tail) and (PROBE == 10 or not tail <= set(pseudo_relevant_doc_ids))
-        return _worst(query, pool, k, s, ns) if hit else out
     if PROBE in (7, 8):
         # No memory of earlier calls: the clean pools hold 100 candidates.
         if (len(pool) > 100) if PROBE == 7 else (len(pool) < 100):
@@ -308,11 +278,9 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
 #   4 output differs (any cause)   5 every added document is in the seed
 #   6 a removed document was in the clean Track B top 10
 #   7 more than 100 candidates   8 fewer than 100 (no memory of earlier calls)
-#   9 a candidate past position 100 is not in the seed   10 more than 100
-#     candidates before the cap (no memory of earlier calls)
 PROBE = 0
-# Track B keeps only the first POOL_CAP candidates (0 = all). Every local
-# candidate list holds at most 100 documents.
+# Both tracks rerank only the first POOL_CAP candidates (0 = all), the
+# first-pass top 100. Every local candidate list holds at most 100 documents.
 POOL_CAP = 100
 _seen: dict = {}
 
@@ -344,4 +312,3 @@ _lib = _load_native()
 if _lib is None:
     raise RuntimeError("C++ engine failed to build or load")
 set_params(**PARAMS)
-set_params_a(**dict(PARAMS, **PARAMS_A))

@@ -67,22 +67,6 @@ int rm_get_param(const char* name, double* v) {
     return rm::get_param(eng().P, name, *v) ? 0 : -1;
 }
 
-int rm_set_param_a(const char* name, double v) {
-    std::lock_guard<std::mutex> g(g_m);
-    return rm::set_param(eng().PA, name, v) ? 0 : -1;
-}
-
-int rm_get_param_a(const char* name, double* v) {
-    std::lock_guard<std::mutex> g(g_m);
-    return rm::get_param(eng().PA, name, *v) ? 0 : -1;
-}
-
-int rm_score_a(const char* query, const char* cands, int nc, int k, int32_t* idx, double* sc) {
-    std::lock_guard<std::mutex> g(g_m);
-    try { return write_out(eng().score_track_a(query, split(cands, nc), k), idx, sc); }
-    catch (const std::exception& e) { g_err = e.what(); return -1; }
-}
-
 int rm_stats(char* buf, int len) {
     std::lock_guard<std::mutex> g(g_m);
     return copy_buf(eng().stats_json(), buf, len);

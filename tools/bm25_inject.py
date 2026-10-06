@@ -19,7 +19,7 @@ from tools.track_a_sweep import load
 configs = json.load(open(sys.argv[1]))
 SETS = sys.argv[2].split(",") if len(sys.argv) > 2 else ["scifact", "antique"]
 N_ADD = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-base = dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS)
+base = dict({"ax_z": 1}, **fb.PARAMS)
 TOK = re.compile(r"[a-z0-9]+")
 STOP = set("a an the of and or in on to for with is are was were be by as at from that this it its which".split())
 

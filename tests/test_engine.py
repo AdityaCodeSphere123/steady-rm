@@ -19,7 +19,7 @@ DOCS = {
     "d5": "apple orchard harvest fruit",
 }
 TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0, w_uw=0, prior_w=0,
-                fb_prior_w=0, rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
+                rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
                 term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
                 fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
                 ranker=0, ax_w=0, fb_rm_w=0,
@@ -76,8 +76,7 @@ def main():
     q, seed, pool = ["apple", "fruit"], ["d2", "d5", "d1"], list(DOCS)
 
     # 1. Query likelihood.
-    # The feedback engine's query likelihood (score_candidates runs cpp_a).
-    ql = dict(fb._run(fb._lib.rm_score, pool, 5, b"apple fruit"))
+    ql = dict(fb.score_candidates("apple fruit", pool, 5))
     for d in pool:
         close(ql[d], sum(math.log(pwd_dir(t, d)) for t in q))
 
@@ -130,6 +129,14 @@ def main():
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)
     fb.score_candidates("apple juice", pool, 5)
     assert fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5) == a
+
+    # 6. Feedback off (lambda = 1): relevance_model_feedback() is score_candidates().
+    lam = fb.get_param("lambda")
+    fb.set_params(**{"lambda": 1.0})
+    for qq in ("apple fruit", "apple juice", "fruit"):
+        for sd in (["d2", "d5"], [], ["d4", "zzz"]):
+            assert fb.relevance_model_feedback(qq, sd, pool, 5) == fb.score_candidates(qq, pool, 5), (qq, sd)
+    fb.set_params(**{"lambda": lam})
     print("all engine tests passed")
 
 

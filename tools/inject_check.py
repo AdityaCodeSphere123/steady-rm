@@ -7,7 +7,7 @@ from tools.track_a_sweep import load
 from tools.pool_noise import corpus_ids
 
 configs = json.load(open(sys.argv[1]))
-base = dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS)
+base = dict({"ax_z": 1}, **fb.PARAMS)
 for s in sys.argv[2:]:
     d = load(s); fb.set_params(**base); fb.prepare(d[0]); _, qs, qr, cands = d
     rid = corpus_ids(d[0], 20000)

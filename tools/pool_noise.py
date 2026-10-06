@@ -76,7 +76,7 @@ def main():
     ap.add_argument("--sets", nargs="+", default=["scifact", "antique"])
     a = ap.parse_args()
     configs = json.load(open(a.configs))
-    base = dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS)
+    base = dict({"ax_z": 1}, **fb.PARAMS)
     for s in a.sets:
         data = load(s)
         fb.set_params(**base)

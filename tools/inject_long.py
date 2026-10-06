@@ -14,7 +14,7 @@ from tools.track_a_sweep import load
 
 configs = json.load(open(sys.argv[1]))
 SETS = sys.argv[2].split(",") if len(sys.argv) > 2 else ["scifact", "antique"]
-base = dict({"ax_z": 1, "fb_prior_w": -1}, **fb.PARAMS)
+base = dict({"ax_z": 1}, **fb.PARAMS)
 
 
 def corpus(path):
