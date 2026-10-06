@@ -55,14 +55,14 @@ PARAMS: Dict[str, float] = {
     "len_prior": 0,
     "prior_w": 0, "prior_k": 4,
     "rm_variant": 3,
-    "fb_mu": 250, "fb_docs": 10, "fb_terms": 80, "beta": 12, "idf_power": 0.5,
+    "fb_mu": 250, "fb_docs": 10, "fb_terms": 40, "beta": 12, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.93,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 1,
     "fb_mode": 1, "fb_loo": 0, "fb_scale": 4,
-    "fb_cov": 0.25, "fb_conf": 0, "fb_anchor_exp": 1.0,
+    "fb_cov": 0.5, "fb_conf": 0, "fb_anchor_exp": 1.0,
     "fb_lock": 0,
 }
 
