@@ -60,7 +60,7 @@ PARAMS: Dict[str, float] = {
     "qspell": 0,
     "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
+    "lead_w": 0.10, "lead_len": 24, "lead_mu": 60,
     "len_prior": 0.35,
     "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
     "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
@@ -76,30 +76,48 @@ PARAMS: Dict[str, float] = {
     "fb_lock": 1,
 }
 
-_lib = None
+# Track A (score_candidates) runs a separate engine, submission/cpp_a: the
+# 5 Oct 16:52 model (commit d1e6fc1, hidden Track A 0.53765 / 0.45920),
+# F2EXP + BM25 fused with a two-stage query-likelihood field model.
+# Track B never reads it: feedback re-ranks with the engine above.
+_CPP_A = os.path.join(_HERE, "cpp_a")
+PARAMS_A: Dict[str, float] = {
+    "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
+    "smoothing": 2, "jm_lambda": 0.3, "mu": 100,
+    "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
+    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
+    "len_prior": 0.3, "longq_n": 0,
+    "prior_w": 0.12, "prior_k": 7,
+    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 1.0,
+    "pool_lambda": 1.0, "pool_docs": 8,
+    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0,
+}
 
-def _digest(flags: Sequence[str]) -> str:
+_lib = None
+_lib_a = None
+
+def _digest(flags: Sequence[str], cpp: str = _CPP) -> str:
     h = hashlib.sha256()
     for name in _SOURCES + _HEADERS:
-        with open(os.path.join(_CPP, name), "rb") as fh:
+        with open(os.path.join(cpp, name), "rb") as fh:
             h.update(name.encode()); h.update(fh.read())
     h.update(" ".join(flags).encode())
     return h.hexdigest()[:16]
 
 
-def _compile(out: str, flags: Sequence[str]) -> bool:
+def _compile(out: str, flags: Sequence[str], cpp: str = _CPP) -> bool:
     """Compile the three translation units in parallel (one g++ each, the
     grading VM has 4 cores), then link. Atomic rename at the end."""
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cxx = os.environ.get("CXX", "g++")
     tag = f"{os.getpid()}"
     objs, procs = [], []
-    cflags = [f for f in flags if f != "-shared"]
+    cflags = [f for f in flags if f != "-shared" and not f.startswith("-Wl,")]
     try:
         for src in _SOURCES:
             obj = f"{out}.{src}.{tag}.o"
             objs.append(obj)
-            procs.append(subprocess.Popen([cxx, *cflags, "-c", os.path.join(_CPP, src), "-o", obj],
+            procs.append(subprocess.Popen([cxx, *cflags, "-c", os.path.join(cpp, src), "-o", obj],
                                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
         ok = all(p.wait(timeout=300) == 0 for p in procs)
         tmp = f"{out}.{tag}.tmp"
@@ -143,18 +161,22 @@ def _declare(lib) -> None:
         fn.argtypes, fn.restype = args, res
 
 
-def _load_native():
+def _load_native(cpp: str = _CPP, prefix: str = "librm"):
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
     extra = os.environ.get("RM_EXTRA_FLAGS", "").split()   # dev only, e.g. sanitizers
+    # Both engines export the same C++ globals; -Bsymbolic keeps each
+    # library bound to its own copy under ELF symbol interposition.
+    if sys.platform.startswith("linux"):
+        extra = extra + ["-Wl,-Bsymbolic"]
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
         try:
-            digest = _digest(flags)
+            digest = _digest(flags, cpp)
         except OSError:
             return None
         for d in dirs:
-            path = os.path.join(d, f"librm_{digest}.so")
+            path = os.path.join(d, f"{prefix}_{digest}.so")
             try:
-                if not os.path.exists(path) and not _compile(path, flags):
+                if not os.path.exists(path) and not _compile(path, flags, cpp):
                     continue
                 lib = ctypes.CDLL(path)
                 _declare(lib)
@@ -231,11 +253,12 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
 def prepare(corpus_path: str) -> None:
     """One pass over the corpus (4 threads): tokenise, build P(w|C).
     Idempotent for the same path."""
-    if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
-        raise RuntimeError(_lib.rm_last_error().decode())
+    for lib in (_lib, _lib_a):
+        if lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
+            raise RuntimeError(lib.rm_last_error().decode())
 
 
-def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
+def _run(fn, pool: List[str], k: int, *args, lib=None) -> List[Tuple[str, float]]:
     k = min(int(k), len(pool))
     if k <= 0:
         return []
@@ -244,13 +267,13 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
     sc = (ctypes.c_double * k)()
     n = fn(*args, c, nc, k, idx, sc)
     if n < 0:
-        raise RuntimeError(_lib.rm_last_error().decode())
+        raise RuntimeError((lib or _lib).rm_last_error().decode())
     return [(pool[idx[i]], float(sc[i])) for i in range(n)]
 
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
-    """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
-    return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
+    """Rerank candidate_doc_ids with the Track A engine (cpp_a)."""
+    return _run(_lib_a.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), lib=_lib_a)
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
@@ -313,6 +336,10 @@ def _worst(query, pool, k, s, ns):
 
 
 _lib = _load_native()
-if _lib is None:
+_lib_a = _load_native(_CPP_A, "librm_a")
+if _lib is None or _lib_a is None:
     raise RuntimeError("C++ engine failed to build or load")
 set_params(**PARAMS)
+for _k, _v in PARAMS_A.items():
+    if _lib_a.rm_set_param(_k.encode(), float(_v)) != 0:
+        raise KeyError(f"unknown Track A parameter {_k!r}")

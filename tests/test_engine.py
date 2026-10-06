@@ -76,7 +76,8 @@ def main():
     q, seed, pool = ["apple", "fruit"], ["d2", "d5", "d1"], list(DOCS)
 
     # 1. Query likelihood.
-    ql = dict(fb.score_candidates("apple fruit", pool, 5))
+    # The feedback engine's query likelihood (score_candidates runs cpp_a).
+    ql = dict(fb._run(fb._lib.rm_score, pool, 5, b"apple fruit"))
     for d in pool:
         close(ql[d], sum(math.log(pwd_dir(t, d)) for t in q))
 
