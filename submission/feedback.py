@@ -72,7 +72,7 @@ PARAMS: Dict[str, float] = {
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0.0, "fb_conf": 0.50, "fb_anchor_exp": 0.5,
+    "fb_cov": 0.0, "fb_conf": 0.20, "fb_anchor_exp": 0.5,
     "fb_lock": 1,
 }
 
@@ -260,6 +260,8 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     output is drawn from candidate_doc_ids only."""
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     pool = list(dict.fromkeys(candidate_doc_ids))
+    if POOL_CAP and len(pool) > POOL_CAP:
+        pool = pool[:POOL_CAP]
     out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
     if PROBE in (7, 8):
         # No memory of earlier calls: the clean pools hold 100 candidates.
@@ -281,6 +283,9 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
 #   6 a removed document was in the clean Track B top 10
 #   7 more than 100 candidates   8 fewer than 100 (no memory of earlier calls)
 PROBE = 0
+# Track B keeps only the first POOL_CAP candidates (0 = all). Every local
+# candidate list holds at most 100 documents.
+POOL_CAP = 100
 _seen: dict = {}
 
 
