@@ -148,6 +148,9 @@ struct Params {
     // If > 0 and no supplied seed is among the first-pass top fb_match
     // candidates, feedback returns the score_candidates ranking.
     double fb_match = 0;
+    // Query likelihood: IDF weighting of the query terms (0 = plain QL) and
+    // a bonus per matched query term, in log-probability units.
+    double qidf_w = 0, qcov_w = 0;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
