@@ -62,7 +62,7 @@ PARAMS: Dict[str, float] = {
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 1,
     "fb_mode": 1, "fb_loo": 0, "fb_scale": 4,
-    "fb_cov": 0.5, "fb_conf": 0, "fb_anchor_exp": 1.0,
+    "fb_cov": 0.5, "fb_conf": 0.3, "fb_anchor_exp": 1.0,
     "fb_lock": 0,
     # Engine options that are off; listed so set_params(**PARAMS) resets them.
     "spud_l": 0, "lead_decay": 0, "fb_mass": 0, "fb_mass_pow": 1,
