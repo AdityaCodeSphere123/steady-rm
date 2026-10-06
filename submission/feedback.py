@@ -1,6 +1,5 @@
 """Competition entrypoint. C++ engine in submission/cpp, compiled on import.
-Falls back to _feedback_py.py if the build fails. RM_FORCE_PYTHON=1 forces
-that fallback. RM_THREADS caps threads at 4.
+RM_THREADS caps threads at 4.
 
     prepare(corpus_path)
     score_candidates(query, candidate_doc_ids, k=10)
@@ -11,9 +10,8 @@ The shared library is compiled from source on first import, on the machine
 running the harness, into submission/_build/ (or the temp dir if that is
 read-only). Its file name carries a hash of sources + flags, so edited
 sources are always rebuilt and a binary built elsewhere is never loaded
-(a -march=native binary from another CPU could crash the process). If
-building or loading fails, the module falls back to the pure-Python
-implementation in _feedback_py.py, so the entrypoints always work.
+(a -march=native binary from another CPU could crash the process). Building
+or loading failure raises; there is no Python implementation.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
   Track A  Two-stage smoothed unigram query likelihood (Dirichlet mu=550,
@@ -27,11 +25,10 @@ Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
            A seed is replaced by that ranker's own top-10. If no seed
            document holds at least 0.30 of the posterior, feedback returns
            that ranker's query-likelihood ranking.
-RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
+RM_THREADS=n caps threads (max 4).
 """
 import ctypes
 import hashlib
-import importlib.util
 import json
 import os
 import subprocess
@@ -71,16 +68,15 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
-    "lambda": 0.9,
+    "lambda": 0.85,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0.0, "fb_conf": 0.20, "fb_anchor_exp": 1.0,
+    "fb_cov": 0.0, "fb_conf": 0.20, "fb_anchor_exp": 0.5,
     "fb_lock": 1,
 }
 
 _lib = None
-_py = None
 
 def _digest(flags: Sequence[str]) -> str:
     h = hashlib.sha256()
@@ -148,8 +144,6 @@ def _declare(lib) -> None:
 
 
 def _load_native():
-    if os.environ.get("RM_FORCE_PYTHON") == "1":
-        return None
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
     extra = os.environ.get("RM_EXTRA_FLAGS", "").split()   # dev only, e.g. sanitizers
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
@@ -170,25 +164,16 @@ def _load_native():
     return None
 
 
-def _load_fallback():
-    spec = importlib.util.spec_from_file_location("_rm_feedback_py", os.path.join(_HERE, "_feedback_py.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 # ---------------------------------------------------------------------------
 # Helpers (not part of the graded interface)
 # ---------------------------------------------------------------------------
 
 def backend() -> str:
-    return "cpp" if _lib is not None else "python"
+    return "cpp"
 
 
 def set_params(**kw: float) -> None:
     """Override engine parameters by name (tools/sweep.py)."""
-    if _lib is None:
-        return
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
@@ -196,7 +181,7 @@ def set_params(**kw: float) -> None:
 
 def get_param(name: str) -> float:
     v = ctypes.c_double()
-    if _lib is None or _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
+    if _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
         raise KeyError(name)
     return v.value
 
@@ -217,19 +202,17 @@ def _join(ids: Sequence[str]) -> Tuple[bytes, int]:
 
 
 def stats() -> dict:
-    return _json_call(_lib.rm_stats) if _lib is not None else {}
+    return _json_call(_lib.rm_stats)
 
 
 def analyze(query: str) -> List[str]:
     """The query terms after tokenising, stopping and stemming."""
-    return _json_call(_lib.rm_analyze, query.encode()) if _lib is not None else []
+    return _json_call(_lib.rm_analyze, query.encode())
 
 
 def explain_feedback(query: str, pseudo_relevant_doc_ids: List[str],
                      candidate_doc_ids: Optional[List[str]] = None) -> dict:
     """Seed weights, estimated model, lambda for one feedback call."""
-    if _lib is None:
-        return _py.explain_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids or [])
     s, ns = _join(pseudo_relevant_doc_ids)
     c, nc = _join(candidate_doc_ids or [])
     return _json_call(_lib.rm_explain, query.encode(), s, ns, c, nc)
@@ -248,8 +231,6 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
 def prepare(corpus_path: str) -> None:
     """One pass over the corpus (4 threads): tokenise, build P(w|C).
     Idempotent for the same path."""
-    if _lib is None:
-        return _py.prepare(corpus_path)
     if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
         raise RuntimeError(_lib.rm_last_error().decode())
 
@@ -269,8 +250,6 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
     """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
-    if _lib is None:
-        return _py.score_candidates(query, candidate_doc_ids, k)
     return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
@@ -279,13 +258,11 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     """Rerank candidate_doc_ids with a relevance model estimated from
     pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
     output is drawn from candidate_doc_ids only."""
-    if _lib is None:
-        return _py.relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     pool = list(dict.fromkeys(candidate_doc_ids))
     out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
     if PROBE:
-        return _probe(query, pool, k, out, s, ns)
+        return _probe(query, pool, k, out, s, ns, set(pseudo_relevant_doc_ids))
     return out
 
 
@@ -295,20 +272,24 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
 # selects returns the 10 worst-ranked candidates instead, so the hidden
 # retention drop measures how often that happens.
 #   1 candidate set differs   2 documents added   3 documents removed
-#   4 output differs (any cause)
+#   4 output differs (any cause)   5 every added document is in the seed
+#   6 a removed document was in the clean Track B top 10
 PROBE = 0
 _seen: dict = {}
 
 
-def _probe(query, pool, k, out, s, ns):
+def _probe(query, pool, k, out, s, ns, seed):
     cur = frozenset(pool)
     first = _seen.get(query)
     if first is None:
         _seen[query] = (cur, [d for d, _ in out])
         return out
     ref, ref_out = first
-    hit = {1: cur != ref, 2: bool(cur - ref), 3: bool(ref - cur),
-           4: [d for d, _ in out] != ref_out}.get(int(PROBE), False)
+    added, removed = cur - ref, ref - cur
+    hit = {1: cur != ref, 2: bool(added), 3: bool(removed),
+           4: [d for d, _ in out] != ref_out,
+           5: bool(added) and added <= seed,
+           6: bool(removed & set(ref_out))}.get(int(PROBE), False)
     if not hit:
         return out
     full = _run(_lib.rm_feedback, pool, len(pool), query.encode("utf-8"), s, ns)
@@ -317,7 +298,6 @@ def _probe(query, pool, k, out, s, ns):
 
 
 _lib = _load_native()
-if _lib is not None:
-    set_params(**PARAMS)
-else:
-    _py = _load_fallback()
+if _lib is None:
+    raise RuntimeError("C++ engine failed to build or load")
+set_params(**PARAMS)
