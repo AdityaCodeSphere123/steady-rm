@@ -27,10 +27,11 @@ def map10(ranked, qrels_q):
 
 
 def load(name):
-    d = os.path.join(ROOT, name)
+    weak = name.endswith("_weak")
+    d = os.path.join(ROOT, name[:-5] if weak else name)
     qs = read_queries(os.path.join(d, "queries_dev.tsv"))
     qr = read_qrels(os.path.join(d, "qrels_dev.txt"))
-    cands = read_candidates(os.path.join(d, "candidates_dev.jsonl"))
+    cands = read_candidates(os.path.join(d, "candidates_weak.jsonl" if weak else "candidates_dev.jsonl"))
     qs = [(q, t) for q, t in qs if q in cands and q in qr]
     return os.path.join(d, "corpus.jsonl"), qs, qr, cands
 

@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay) X(fb_mass) X(fb_mass_pow)
+    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay) X(fb_mass) X(fb_mass_pow) X(fdm_gap) X(fdm_w)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -109,6 +109,7 @@ struct Engine::Query {
     std::vector<uint16_t> slot_of_term;     // terms[i] -> slot in uniq
     std::vector<std::pair<uint16_t, uint16_t>> pairs;  // adjacent (slot a, slot b)
     std::vector<std::pair<uint64_t, uint64_t>> pair_cf;  // (cf ordered, cf unordered)
+    size_t n_adj = 0;                       // pairs[0, n_adj) are adjacent; the rest are FDM pairs
     size_t len() const { return terms.size(); }
 };
 
@@ -450,6 +451,16 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
         prev = slot;
         if (q.uniq.size() >= 0xFFF0) break;
     }
+    q.n_adj = q.pairs.size();
+    if (P.fdm_gap >= 2 && P.fdm_w > 0 && q.terms.size() <= 16) {
+        // Full dependence: non-adjacent pairs up to fdm_gap apart, unordered window only.
+        const size_t G = static_cast<size_t>(P.fdm_gap);
+        for (size_t i = 0; i < q.terms.size(); ++i)
+            for (size_t j = i + 2; j < q.terms.size() && j - i <= G; ++j) {
+                const uint16_t a = q.slot_of_term[i], b = q.slot_of_term[j];
+                if (a != b) q.pairs.push_back({a, b});
+            }
+    }
     q.pair_cf.assign(q.pairs.size(), {0, 0});
     return q;
 }
@@ -673,6 +684,12 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         for (size_t p = 0; p < q.pairs.size(); ++p) {
             double pco = (q.pair_cf[p].first ? q.pair_cf[p].first : 0.5) / T;
             double pcu = (q.pair_cf[p].second ? q.pair_cf[p].second : 0.5) / T;
+            if (p >= q.n_adj) {
+                const double fw = P.w_uw > 0 ? P.fdm_w / P.w_uw : 0.0;
+                f.uw += fw * (P.smoothing >= 3 ? log_p_dir(static_cast<uint32_t>(uw[p]), dlen, pcu)
+                                               : log_p(static_cast<uint32_t>(uw[p]), dlen, pcu));
+                continue;
+            }
             if (P.smoothing >= 3) {
                 f.od += log_p_dir(static_cast<uint32_t>(od[p]), dlen, pco);
                 f.uw += log_p_dir(static_cast<uint32_t>(uw[p]), dlen, pcu);
