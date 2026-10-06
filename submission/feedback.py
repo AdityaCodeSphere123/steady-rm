@@ -282,10 +282,13 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
     output is drawn from candidate_doc_ids only."""
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
-    pool = list(dict.fromkeys(candidate_doc_ids))
-    if POOL_CAP and len(pool) > POOL_CAP:
-        pool = pool[:POOL_CAP]
+    full = list(dict.fromkeys(candidate_doc_ids))
+    pool = full[:POOL_CAP] if POOL_CAP and len(full) > POOL_CAP else full
     out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
+    if PROBE in (9, 10):
+        tail = set(full[100:])
+        hit = bool(tail) and (PROBE == 10 or not tail <= set(pseudo_relevant_doc_ids))
+        return _worst(query, pool, k, s, ns) if hit else out
     if PROBE in (7, 8):
         # No memory of earlier calls: the clean pools hold 100 candidates.
         if (len(pool) > 100) if PROBE == 7 else (len(pool) < 100):
@@ -305,6 +308,8 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
 #   4 output differs (any cause)   5 every added document is in the seed
 #   6 a removed document was in the clean Track B top 10
 #   7 more than 100 candidates   8 fewer than 100 (no memory of earlier calls)
+#   9 a candidate past position 100 is not in the seed   10 more than 100
+#     candidates before the cap (no memory of earlier calls)
 PROBE = 0
 # Track B keeps only the first POOL_CAP candidates (0 = all). Every local
 # candidate list holds at most 100 documents.
