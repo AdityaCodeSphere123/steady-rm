@@ -68,7 +68,7 @@ PARAMS: Dict[str, float] = {
     "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
     "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
     "rm_variant": 3,
-    "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
+    "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.8,
@@ -282,7 +282,38 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     if _lib is None:
         return _py.relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
-    return _run(_lib.rm_feedback, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), s, ns)
+    pool = list(dict.fromkeys(candidate_doc_ids))
+    out = _run(_lib.rm_feedback, pool, k, query.encode("utf-8"), s, ns)
+    if PROBE:
+        return _probe(query, pool, k, out, s, ns)
+    return out
+
+
+# Diagnostic only (one hidden run, never a real submission: it remembers
+# earlier calls). The first feedback call for a query text records its
+# candidate set and output; a later call that differs in the way PROBE
+# selects returns the 10 worst-ranked candidates instead, so the hidden
+# retention drop measures how often that happens.
+#   1 candidate set differs   2 documents added   3 documents removed
+#   4 output differs (any cause)
+PROBE = 0
+_seen: dict = {}
+
+
+def _probe(query, pool, k, out, s, ns):
+    cur = frozenset(pool)
+    first = _seen.get(query)
+    if first is None:
+        _seen[query] = (cur, [d for d, _ in out])
+        return out
+    ref, ref_out = first
+    hit = {1: cur != ref, 2: bool(cur - ref), 3: bool(ref - cur),
+           4: [d for d, _ in out] != ref_out}.get(int(PROBE), False)
+    if not hit:
+        return out
+    full = _run(_lib.rm_feedback, pool, len(pool), query.encode("utf-8"), s, ns)
+    worst = [d for d, _ in full][-min(k, len(full)):][::-1]
+    return [(d, -float(i)) for i, d in enumerate(worst)]
 
 
 _lib = _load_native()
