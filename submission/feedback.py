@@ -1,6 +1,5 @@
 """Competition entrypoint. C++ engine in submission/cpp, compiled on import.
-Falls back to _feedback_py.py if the build fails. RM_FORCE_PYTHON=1 forces
-that fallback. RM_THREADS caps threads at 4.
+RM_THREADS caps threads at 4.
 
     prepare(corpus_path)
     score_candidates(query, candidate_doc_ids, k=10)
@@ -11,26 +10,25 @@ The shared library is compiled from source on first import, on the machine
 running the harness, into submission/_build/ (or the temp dir if that is
 read-only). Its file name carries a hash of sources + flags, so edited
 sources are always rebuilt and a binary built elsewhere is never loaded
-(a -march=native binary from another CPU could crash the process). If
-building or loading fails, the module falls back to the pure-Python
-implementation in _feedback_py.py, so the entrypoints always work.
+(a -march=native binary from another CPU could crash the process). Building
+or loading failure raises.
 
 Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Dirichlet query likelihood (mu=550) plus a z-scored F2EXP
-           feature (weight 0.75, s=0.65, k=0.20).
-  Track B  RM3 inside that language model: 0.2 * query + 0.8 * RM1.
-           If no seed document holds at least 0.40 of the posterior,
-           feedback returns the Track A ranking. A seed that is not the
-           Track A top-10 is replaced by that top-10.
-RM_FORCE_PYTHON=1 forces the fallback; RM_THREADS=n caps threads (max 4).
+  Track A  Query likelihood with the SPUD (Polya urn) document model
+           (spud_mu=800, df background), mixed with a lead-field LM over
+           the first 20 tokens (weight 0.1, Dirichlet 60), plus sequential
+           dependence (ordered 0.05, unordered window 12 0.1, Dirichlet 550).
+  Track B  RM3 inside that same model, query part included:
+           0.9 * Track A + 0.1 * sum_w P(w|R) log P(w|D), P(w|R) = RM1 over
+           the given seed (P(D|Q) sharpened by beta=12, 40 terms). With
+           lambda set to 1, feedback returns the Track A ranking and scores.
+RM_THREADS=n caps threads (max 4).
 """
 import ctypes
 import hashlib
-import importlib.util
 import json
 import os
 import subprocess
-import sys
 import tempfile
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -43,33 +41,30 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
-# 4 Oct 17:14 upload: Track A 0.5328, Track B 0.5339, retention 1.
-# Dirichlet QL (mu=550) + z-scored F2EXP (0.75, s=0.65, k=0.20).
-# RM3 weight on the original query is 0.2. A flat seed (heaviest weight
-# below 0.40) returns Track A. A seed that is not the Track A top-10 is
-# replaced by that top-10.
+# SPUD + lead-field + SDM query likelihood (Track A), tuned on 2*SciFact +
+# ANTIQUE. RM3 weight on the original query is 0.9, estimated from the
+# supplied seed (fb_lock and fb_conf off).
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 0, "jm_lambda": 0.50, "mu": 550,
-    "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0, "lead_len": 8, "lead_mu": 60,
+    "qspell": 0,
+    "smoothing": 3, "spud_mu": 800, "spud_bg": 1, "jm_lambda": 0.50, "mu": 550,
+    "w_od": 0.05, "w_uw": 0.1, "uw_window": 12,
+    "lead_w": 0.1, "lead_len": 20, "lead_mu": 60,
     "len_prior": 0,
     "prior_w": 0, "prior_k": 4,
-    "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 0.75,
     "rm_variant": 3,
-    "fb_mu": 250, "fb_docs": 10, "fb_terms": 15, "beta": 1, "idf_power": 0.5,
+    "fb_mu": 250, "fb_docs": 10, "fb_terms": 40, "beta": 12, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.9,
     "qlen_shrink": 0, "small_seed_n": 0,
-    "fb_sdm": 0,
-    "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
-    "fb_cov": 0.25, "fb_conf": 0.30, "fb_anchor_exp": 1.0,
-    "fb_lock": 1,
+    "fb_sdm": 1,
+    "fb_mode": 0, "fb_loo": 0, "fb_scale": 8,
+    "fb_cov": 0.25, "fb_conf": 0, "fb_anchor_exp": 1.0,
+    "fb_lock": 0,
 }
 
 _lib = None
-_py = None
 
 def _digest(flags: Sequence[str]) -> str:
     h = hashlib.sha256()
@@ -137,8 +132,6 @@ def _declare(lib) -> None:
 
 
 def _load_native():
-    if os.environ.get("RM_FORCE_PYTHON") == "1":
-        return None
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
     extra = os.environ.get("RM_EXTRA_FLAGS", "").split()   # dev only, e.g. sanitizers
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
@@ -159,25 +152,16 @@ def _load_native():
     return None
 
 
-def _load_fallback():
-    spec = importlib.util.spec_from_file_location("_rm_feedback_py", os.path.join(_HERE, "_feedback_py.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 # ---------------------------------------------------------------------------
 # Helpers (not part of the graded interface)
 # ---------------------------------------------------------------------------
 
 def backend() -> str:
-    return "cpp" if _lib is not None else "python"
+    return "cpp"
 
 
 def set_params(**kw: float) -> None:
     """Override engine parameters by name (tools/sweep.py)."""
-    if _lib is None:
-        return
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
@@ -185,7 +169,7 @@ def set_params(**kw: float) -> None:
 
 def get_param(name: str) -> float:
     v = ctypes.c_double()
-    if _lib is None or _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
+    if _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
         raise KeyError(name)
     return v.value
 
@@ -206,19 +190,17 @@ def _join(ids: Sequence[str]) -> Tuple[bytes, int]:
 
 
 def stats() -> dict:
-    return _json_call(_lib.rm_stats) if _lib is not None else {}
+    return _json_call(_lib.rm_stats)
 
 
 def analyze(query: str) -> List[str]:
     """The query terms after tokenising, stopping and stemming."""
-    return _json_call(_lib.rm_analyze, query.encode()) if _lib is not None else []
+    return _json_call(_lib.rm_analyze, query.encode())
 
 
 def explain_feedback(query: str, pseudo_relevant_doc_ids: List[str],
                      candidate_doc_ids: Optional[List[str]] = None) -> dict:
     """Seed weights, estimated model, lambda for one feedback call."""
-    if _lib is None:
-        return _py.explain_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids or [])
     s, ns = _join(pseudo_relevant_doc_ids)
     c, nc = _join(candidate_doc_ids or [])
     return _json_call(_lib.rm_explain, query.encode(), s, ns, c, nc)
@@ -237,8 +219,6 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
 def prepare(corpus_path: str) -> None:
     """One pass over the corpus (4 threads): tokenise, build P(w|C).
     Idempotent for the same path."""
-    if _lib is None:
-        return _py.prepare(corpus_path)
     if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
         raise RuntimeError(_lib.rm_last_error().decode())
 
@@ -258,8 +238,6 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
     """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
-    if _lib is None:
-        return _py.score_candidates(query, candidate_doc_ids, k)
     return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
@@ -268,14 +246,11 @@ def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
     """Rerank candidate_doc_ids with a relevance model estimated from
     pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
     output is drawn from candidate_doc_ids only."""
-    if _lib is None:
-        return _py.relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     return _run(_lib.rm_feedback, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), s, ns)
 
 
 _lib = _load_native()
-if _lib is not None:
-    set_params(**PARAMS)
-else:
-    _py = _load_fallback()
+if _lib is None:
+    raise RuntimeError("C++ engine failed to build or load")
+set_params(**PARAMS)

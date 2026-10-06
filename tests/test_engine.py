@@ -22,7 +22,7 @@ TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0,
                 fb_prior_w=0, rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
                 term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
                 fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
-                ranker=0, ax_w=0, fb_rm_w=0,
+                fb_rm_w=0,
                 support_frac=0, idf_select=0, fb_qterms=0, fb_cov=0, fb_conf=0, fb_anchor_exp=0, fb_lock=0)
 MU = 10.0
 
@@ -121,9 +121,16 @@ def main():
             assert all(r[i][1] >= r[i + 1][1] for i in range(len(r) - 1))
     assert fb.score_candidates("apple", [], 10) == []
     assert fb.relevance_model_feedback("", ["d1"], ["d1", "d2"], 10)  # empty query -> pool order
-    # With fb_lock an empty seed is treated like any other drifted seed.
-    assert fb.relevance_model_feedback("apple", [], ["d1", "d2"], 2) == \
-        fb.relevance_model_feedback("apple", ["d1"], ["d1", "d2"], 2)
+    # No usable seed: no feedback, exactly the Track A ranking and scores.
+    pool2 = ["d1", "d2"]
+    assert fb.relevance_model_feedback("apple", [], pool2, 2) == fb.score_candidates("apple", pool2, 2)
+    # The supplied seed is used as given: unknown ids leave no usable seed.
+    assert fb.relevance_model_feedback("apple", ["zzz"], pool2, 2) == fb.score_candidates("apple", pool2, 2)
+    # Feedback off (lambda = 1): exactly the Track A ranking and scores.
+    fb.set_params(**{**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")}, "lambda": 1.0})
+    for q, seed in (("apple fruit", ["d1", "d3"]), ("apple juice", ["d2", "zzz", "d4"])):
+        assert fb.relevance_model_feedback(q, seed, pool, 5) == fb.score_candidates(q, pool, 5)
+    fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")})
 
     # 5. Call-order independence: identical output with or without a prior score_candidates().
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)

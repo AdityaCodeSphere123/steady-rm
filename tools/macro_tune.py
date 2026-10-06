@@ -40,7 +40,6 @@ BASE = dict(
     lead_w=0, lead_len=8, lead_mu=60,
     len_prior=0,
     prior_w=0, prior_k=4,
-    ranker=0, ax_b=0.5, ax_k=0.25, ax_c=1.0, ax_w=0.75,
     fb_mu=250, fb_docs=10, fb_terms=15, idf_power=0.5,
     support_frac=0.20, fb_conf=0.30,
     fb_lock=1,
@@ -54,10 +53,6 @@ PREP = {"stemmer", "doc_stop"}
 # Locked, not swept: prior_w, w_od, w_uw, lead_w, fb_lock.
 GRID = [
     ("mu", [250, 500, 600, 750, 1000, 1500]),
-    ("ax_w", [0.5, 0.75, 1.0, 1.25]),
-    ("ax_k", [0.15, 0.25, 0.35, 0.5]),
-    ("ax_b", [0.35, 0.5, 0.65, 0.8]),
-    ("ax_c", [0.5, 1.0, 1.5, 2.0]),
     ("lambda_", [0.75, 0.8, 0.85, 0.9, 0.95]),
     ("fb_terms", [10, 15, 25, 40]),
     ("fb_mu", [100, 250, 500]),

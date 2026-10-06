@@ -34,9 +34,14 @@ struct Params {
     // 2 also distance 2 (typos like Blaphsemy→blasphemy). Not qrel hardcoding.
     double qspell = 0;
     // --- query likelihood -----------------------------------------------------
-    double smoothing = 0;        // 0 Dirichlet, 1 JM, 2 two-stage (Dirichlet then mix P(w|C))
+    double smoothing = 0;        // 0 Dirichlet, 1 JM, 2 two-stage (Dirichlet then mix P(w|C)), 3 SPUD
     double mu = 1000;            // Dirichlet smoothing. Fixed; not estimated from the collection.
     double jm_lambda = 0.5;      // JM / two-stage weight on P(w|C)
+    // SPUD (Cummins, Paik & Lv 2015), the Polya-urn document LM:
+    //   P(w|D) = (|D_v| tf/|D| + spud_mu P(w|C)) / (|D_v| + spud_mu)
+    // |D_v| = distinct terms in D. spud_bg 1: P(w|C) = df_w / sum df (the
+    // DCM background); 0: cf_w / |C|. Proximity pairs keep Dirichlet (mu).
+    double spud_mu = 300, spud_bg = 1;
     // Sequential dependence (Metzler & Croft 2005). Weights are relative to
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
@@ -57,10 +62,6 @@ struct Params {
     // RM3 from the staff pool order (top pool_docs of candidate_doc_ids).
     // 1 = off. Track B lambda stays 1 so C remains 1.
     double pool_lambda = 1.0, pool_docs = 8;
-    // 0 = Dirichlet/JM QL (champ). 1 = F2EXP axiomatic (Fang & Zhai): not an LM.
-    double ranker = 0, ax_b = 0.5, ax_k = 0.35, ax_c = 1.0;
-    // F2EXP z-fused into Dirichlet Track A (0 = off). ranker stays 0.
-    double ax_w = 0.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -114,9 +115,6 @@ struct Params {
     // with P(w|R) estimated from the other seed documents, so a seed doc
     // cannot lift itself (a noisy seed doc otherwise promotes itself).
     double fb_loo = 0;
-    // Seed weights P(D|Q) from Dirichlet query likelihood even when the
-    // Track A ranker is F2EXP (ranker=1); F2EXP is not a probability.
-    double fb_seed_ql = 0;
     // fb_mode 1 scale of the expansion term:
     //   0  z-score (a noisy seed is forced up to one standard deviation)
     //   1  divide by the pool std of log P(Q|D)/|Q|
@@ -131,7 +129,7 @@ struct Params {
     // fb_cov > 0 drops docs below that floor. fb_anchor_exp > 0 multiplies
     // the seed weight by coverage^exp. fb_conf > 0: if the heaviest normalized
     // seed weight is below fb_conf, the posterior is too flat and feedback
-    // returns the exact score_candidates ranking (the QL + F2EXP base).
+    // returns the exact score_candidates ranking.
     double fb_cov = 0, fb_conf = 0, fb_anchor_exp = 0;
     // If > 0, a supplied seed that is not exactly the Track A top fb_docs
     // documents is drift. P(w|R) is estimated from that top set instead, so
@@ -188,7 +186,10 @@ private:
     uint32_t resolve_query_term(const std::string& surface, uint8_t stemmer) const;
     int32_t doc_index(std::string_view id) const;
     void ensure_pair_stats(Query& q);
-    double log_p(uint32_t tf, uint32_t dlen, double pc) const;
+    double log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv = 0) const;
+    double log_p_dir(uint32_t tf, uint32_t dlen, double pc) const;
+    double pbg(uint32_t t) const;   // P(w|C) of the active document model
+    uint32_t dv(int32_t d) const { return d >= 0 && static_cast<size_t>(d) < dv_.size() ? dv_[d] : 0; }
     DocFeat doc_features(const Query& q, int32_t d, Scratch& s) const;
     double qpart(const Query& q, const DocFeat& f, bool sdm) const;
     std::vector<Ranked> fuse_rank(std::vector<double>& score, const std::vector<std::string_view>& ids,
@@ -215,8 +216,6 @@ private:
     std::vector<double> score_pool(const Query& q, const std::vector<int32_t>& docs,
                                    const std::vector<std::pair<uint32_t, double>>* model,
                                    double lam, bool sdm);
-    std::vector<double> f2exp_pool(const Query& q, const std::vector<int32_t>& docs) const;
-    void add_lexical(const Query& q, const std::vector<int32_t>& docs, std::vector<double>& s) const;
 
     bool ready_ = false;
     std::string path_;
@@ -226,6 +225,8 @@ private:
     StrTable vocab_;
     std::vector<uint64_t> cf_;
     std::vector<uint32_t> df_;
+    std::vector<uint32_t> dv_;          // distinct terms per document
+    double df_total_ = 0;               // sum of df_ (= sum of dv_)
     std::vector<uint8_t> term_flags_;   // bit0 long-stoplist, bit1 short-stoplist
     uint64_t total_ = 0;
     double avgdl_ = 0;
