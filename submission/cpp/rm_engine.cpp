@@ -27,7 +27,7 @@ namespace rm {
     X(idf_power) X(idf_select) X(fb_qterms) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
     X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
-    X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
+    X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) X(fb_match) \
     X(pool_lambda) X(pool_docs) \
     X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(bm25_w) X(bm25_k1) X(bm25_b) X(qspell)
 
@@ -1303,6 +1303,14 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     std::vector<int32_t> docs(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
     std::vector<std::string_view> seed_ids(seeds.begin(), seeds.end());
+    if (P.fb_match > 0) {
+        auto scores = track_a(q, cands, docs);
+        auto top = top_k(scores, cands, static_cast<int>(P.fb_match));
+        std::unordered_set<std::string_view> given(seeds.begin(), seeds.end());
+        bool hit = false;
+        for (auto& r : top) hit = hit || given.count(cands[r.idx]);
+        if (!hit) return score_candidates(query, cands, k);
+    }
     if (P.fb_lock > 0) {
         // The harness's clean seed is score_candidates' top fb_docs. Anything
         // else has been swapped. Estimate P(w|R) from the clean set so the
