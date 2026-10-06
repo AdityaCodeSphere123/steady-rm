@@ -18,12 +18,9 @@ DOCS = {
     "d4": "car engine repair shop",
     "d5": "apple orchard harvest fruit",
 }
-TEXTBOOK = dict(stemmer=0, doc_stop=0, query_stop=0, smoothing=0, mu=10, w_od=0, w_uw=0, prior_w=0,
-                fb_prior_w=0, rm2_mix=0, fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, anchor_min=0,
-                term_support=1, per_doc_cap=1, min_cf=1, idf_power=0, agree_gamma=0, lambda_=None,
-                fb_sdm=0, trim_floor=0, len_prior=0, lead_w=0, lam_qlen_slope=0, qlen_shrink=0, qpp_w=0, small_seed_n=0, longq_n=0,
-                fb_rm_w=0,
-                support_frac=0, idf_select=0, fb_qterms=0, fb_cov=0, fb_conf=0, fb_anchor_exp=0, fb_lock=0)
+TEXTBOOK = dict(stemmer=0, query_stop=0, smoothing=0, mu=10, w_od=0, w_uw=0, lead_w=0,
+                fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, support_frac=0, idf_power=0,
+                fb_qterms=0, fb_cov=0, fb_anchor_exp=0, fb_mode=0, fb_sdm=0)
 MU = 10.0
 
 tf = {d: Counter(t.split()) for d, t in DOCS.items()}
@@ -70,8 +67,7 @@ def main():
         for d, t in DOCS.items():
             f.write(json.dumps({"doc_id": d, "text": t}) + "\n")
     assert fb.backend() == "cpp", "C++ engine did not build"
-    p = dict(TEXTBOOK); p.pop("lambda_")
-    fb.set_params(**p)
+    fb.set_params(**TEXTBOOK)
     fb.prepare(path)
     q, seed, pool = ["apple", "fruit"], ["d2", "d5", "d1"], list(DOCS)
 
@@ -89,7 +85,7 @@ def main():
 
     # 3. RM3 ranking: lambda * mean log P(q|D) + (1-lambda) * sum_w P_R(w) log P(w|D)
     lam = 0.4
-    fb.set_params(rm_variant=3, **{"lambda": lam})
+    fb.set_params(**{"lambda": lam})
     m = rm1(q, seed)
     got = dict(fb.relevance_model_feedback("apple fruit", seed, pool, 5))
     for d in pool:
@@ -111,7 +107,7 @@ def main():
     fb.set_params(smoothing=0)
 
     # 4. Conformance: only pool ids, no duplicates, sorted, k respected.
-    fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")})
+    fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k != "stemmer"})
     for fn in (lambda k: fb.score_candidates("apple fruit", ["d3", "d4", "d3"], k),
                lambda k: fb.relevance_model_feedback("apple fruit", ["d2", "zzz", "d4"], ["d3", "d4"], k)):
         for k in (0, 1, 2, 10):
@@ -127,10 +123,10 @@ def main():
     # The supplied seed is used as given: unknown ids leave no usable seed.
     assert fb.relevance_model_feedback("apple", ["zzz"], pool2, 2) == fb.score_candidates("apple", pool2, 2)
     # Feedback off (lambda = 1): exactly the Track A ranking and scores.
-    fb.set_params(**{**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")}, "lambda": 1.0})
+    fb.set_params(**{**{k: v for k, v in fb.PARAMS.items() if k != "stemmer"}, "lambda": 1.0})
     for q, seed in (("apple fruit", ["d1", "d3"]), ("apple juice", ["d2", "zzz", "d4"])):
         assert fb.relevance_model_feedback(q, seed, pool, 5) == fb.score_candidates(q, pool, 5)
-    fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k not in ("stemmer", "doc_stop")})
+    fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k != "stemmer"})
 
     # 5. Call-order independence: identical output with or without a prior score_candidates().
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)

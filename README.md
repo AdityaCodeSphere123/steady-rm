@@ -37,8 +37,7 @@ reading it (especially `harness/leaderboard.py` and
 ```
 submission/
   feedback.py          <- YOUR CODE GOES HERE (the required entrypoint)
-  lm_utils.py           tokenizer + smoothing helpers (optional convenience)
-  corpus_utils.py        corpus loading helper (optional convenience)
+  cpp/                  C++ engine used by feedback.py (see README_A2_ENGINE.md)
   adversarial_set.json  <- optional, bonus track (see docs/GRADING.md)
 
 harness/
