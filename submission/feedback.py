@@ -15,7 +15,7 @@ Model (maths in cpp/rm_engine.cpp, parameters in cpp/rm_engine.h):
   Track A  Query likelihood with the SPUD (Polya urn) document model
            (spud_mu 800, df background), mixed with a lead-field model over
            the first 20 tokens (weight 0.1, Dirichlet 60), plus sequential
-           dependence (ordered 0.05, unordered window 9 weight 0.095, both
+           dependence (ordered 0.05, unordered window 9 weight 0.1, both
            Dirichlet 450).
   Track B  RM3 on the same model: 0.9 * S_A(D) + 0.1 * (E(D) - mean E) / 12,
            where S_A is the score_candidates() score and E(D) = sum_w P(w|R)
@@ -44,7 +44,7 @@ _FLAG_SETS = [
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "query_stop": 1,
     "smoothing": 3, "spud_mu": 800, "spud_bg": 1, "mu": 450, "jm_lambda": 0.5,
-    "w_od": 0.05, "w_uw": 0.095, "uw_window": 9,
+    "w_od": 0.05, "w_uw": 0.1, "uw_window": 9,
     "lead_w": 0.1, "lead_len": 20, "lead_mu": 60,
     "fb_mu": 100, "fb_docs": 5, "fb_terms": 80, "beta": 40,
     "support_frac": 0.2, "idf_power": 0.5, "fb_qterms": 1,
