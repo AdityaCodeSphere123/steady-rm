@@ -65,10 +65,10 @@ struct Params {
     // 0: add on a fixed scale, (log P(Q|D) + ax_w * F2EXP) / |Q|, so a
     // document's score does not depend on which other documents are in the pool.
     double ax_z = 1.0;
-    // BM25 added on the same fixed scale as F2EXP (ax_z = 0 only):
-    // + bm25_w * BM25(Q, D) / |Q|. Pool order and pool contents do not
-    // change a document's score.
-    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.75;
+    // BM25 weight. ax_z = 0: added on the fixed scale, + bm25_w * BM25 / |Q|.
+    // ax_z = 1: z-scored within the pool, like F2EXP. bm25_delta is the
+    // BM25+ lower bound added for every matched term.
+    double bm25_w = 0.0, bm25_k1 = 1.2, bm25_b = 0.75, bm25_delta = 0.0;
     // --- relevance model --------------------------------------------------------
     double rm_variant = 3;       // 1 RM1, 2 RM2, 3 RM3 (interpolated)
     double rm2_mix = 0.0;        // estimate = (1-m) RM1 + m RM2
@@ -172,13 +172,16 @@ public:
     Engine();
     ~Engine();
 
-    Params P;
+    Params P;    // feedback (Track B)
+    Params PA;   // score_candidates (Track A), see score_track_a()
 
     bool prepare(const std::string& path, std::string& err);
     bool ready() const { return ready_; }
     std::string stats_json() const;
 
     std::vector<Ranked> score_candidates(std::string_view query, const std::vector<std::string_view>& cands, int k);
+    // The graded score_candidates(): score_candidates() run with PA.
+    std::vector<Ranked> score_track_a(std::string_view query, const std::vector<std::string_view>& cands, int k);
     std::vector<Ranked> feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                  const std::vector<std::string_view>& cands, int k, Explain* ex = nullptr);
     // Relevance model only (for correctness checks): variant 1 or 2.
