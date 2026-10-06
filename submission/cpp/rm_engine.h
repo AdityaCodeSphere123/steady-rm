@@ -42,6 +42,8 @@ struct Params {
     // |D_v| = distinct terms in D. spud_bg 1: P(w|C) = df_w / sum df (the
     // DCM background); 0: cf_w / |C|. Proximity pairs keep Dirichlet (mu).
     double spud_mu = 300, spud_bg = 1;
+    // Two-stage SPUD: P(w|D) = (1 - spud_l) P_spud(w|D) + spud_l P(w|C).
+    double spud_l = 0;
     // Sequential dependence (Metzler & Croft 2005). Weights are relative to
     // the unigram part, so w_od = w_uw = 0 is exactly unigram QL.
     double w_od = 0.0, w_uw = 0.0;
@@ -50,6 +52,7 @@ struct Params {
     // sentence) form a second document model mixed into P(q|D):
     //   P(q|D) = (1-lead_w) P_body(q|D) + lead_w P_lead(q|D)
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
+    double lead_decay = 0;      // > 0: soft lead field, weight exp(-pos / lead_decay)
     // Document-length prior P(D) ∝ |D|^len_prior, added as len_prior*log(|D|+1).
     double len_prior = 0.0;
     // A1's query-length rule (retrieve() dropped the title bonus on long

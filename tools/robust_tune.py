@@ -41,19 +41,63 @@ def conditions(qid, seed, pool, ranked_all, rel):
     return rnd, hard
 
 
-def evaluate(data):
+_OUTSIDE = {}
+
+
+def outside_docs(name, data):
+    """Per query: (random corpus docs outside the pool, highest Track A
+    non-relevant corpus docs outside the pool). Cached per set."""
+    if name in _OUTSIDE:
+        return _OUTSIDE[name]
+    path, qs, qr, cands = data
+    import json
+    ids = [json.loads(l)["doc_id"] for l in open(path) if l.strip()]
+    out = {}
+    for q, t in qs:
+        pset, rel = set(cands[q]), qr[q]
+        rng = random.Random(noise_injection.stable_seed(q, 3))
+        rnd = [d for d in rng.sample(ids, min(len(ids), 40)) if d not in pset][:10]
+        sample = ids if len(ids) <= 60000 else rng.sample(ids, 60000)
+        top = [d for d, _ in fb.score_candidates(t, sample + cands[q], 300)]
+        hard = [d for d in top if d not in pset and rel.get(d, 0) <= 0][:10]
+        out[q] = (rnd, hard)
+    _OUTSIDE[name] = out
+    return out
+
+
+def append_conditions(qid, seed, pool, outside):
+    """Hidden-style noise: swapped-in docs come from outside the pool and are
+    appended to it. Returns lists of (seed, pool)."""
+    rnd_docs, hard_docs = outside
+    rng = random.Random(noise_injection.stable_seed(qid, 5))
+    def swap(src, f):
+        s = list(seed)
+        n = min(int(round(f * len(s))), len(src))
+        for p, d in zip(rng.sample(range(len(s)), n), src[:n]):
+            s[p] = d
+        return s, pool + [d for d in s if d not in set(pool)]
+    return [swap(rnd_docs, f) for f in (0.25, 0.5, 0.75)], [swap(hard_docs, f) for f in (0.3, 0.5)]
+
+
+def evaluate(data, name=None, append=False):
     _, qs, qr, cands = data
+    outs = outside_docs(name, data) if append else None
     A = B = R1 = R2 = 0.0
     for q, t in qs:
         pool, rel = cands[q], qr[q]
         full = [d for d, _ in fb.score_candidates(t, pool, len(pool))]
         seed = full[:10]
         A += ndcg_at_k(seed, rel, 10)
-        run = lambda s: ndcg_at_k([d for d, _ in fb.relevance_model_feedback(t, s, pool, 10)], rel, 10)
+        run = lambda s, p=pool: ndcg_at_k([d for d, _ in fb.relevance_model_feedback(t, s, p, 10)], rel, 10)
         B += run(seed)
-        rnd, hard = conditions(q, seed, pool, full, rel)
-        R1 += sum(run(s) for s in rnd) / len(rnd)
-        R2 += sum(run(s) for s in hard) / len(hard)
+        if append:
+            rnd, hard = append_conditions(q, seed, pool, outs[q])
+            R1 += sum(run(s, p) for s, p in rnd) / len(rnd)
+            R2 += sum(run(s, p) for s, p in hard) / len(hard)
+        else:
+            rnd, hard = conditions(q, seed, pool, full, rel)
+            R1 += sum(run(s) for s in rnd) / len(rnd)
+            R2 += sum(run(s) for s in hard) / len(hard)
     n = len(qs)
     return A / n, B / n, R1 / n, R2 / n
 
@@ -63,6 +107,7 @@ def main():
     ap.add_argument("--sets", nargs="+", default=["scifact", "antique", "full", "nfcorpus", "vaswani"])
     ap.add_argument("--set", nargs="*", default=[])
     ap.add_argument("--grid", nargs="*", default=[])
+    ap.add_argument("--append", action="store_true", help="hidden-style noise: outside docs appended to the pool")
     a = ap.parse_args()
     base = {**fb.PARAMS, **{k: v[0] for k, v in parse_kv(a.set).items()}}
     grid = parse_kv(a.grid)
@@ -73,9 +118,11 @@ def main():
         data = load(s)
         fb.set_params(**base)
         fb.prepare(data[0])
+        if a.append:
+            outside_docs(s, data)
         for c in combos:
             fb.set_params(**{**base, **dict(zip(keys, c))})
-            res.setdefault(c, {})[s] = evaluate(data)
+            res.setdefault(c, {})[s] = evaluate(data, s, a.append)
     print(f"{'config':40s} {'minGain':>8s} {'meanGain':>8s} {'ret1':>7s} {'ret2':>7s} | per set gain/ret1/ret2")
     rows = []
     for c, per in res.items():
