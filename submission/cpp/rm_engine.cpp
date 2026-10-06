@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(qspell) X(spud_mu) X(spud_bg)
+    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -608,7 +608,9 @@ double Engine::log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const {
     if (P.smoothing >= 3) {
         const double om = P.spud_mu > 0 ? P.spud_mu : 300.0;
         const double ml = dlen ? static_cast<double>(tf) / dlen : 0.0;
-        return std::log((dv * ml + om * pc) / (dv + om));
+        const double p = (dv * ml + om * pc) / (dv + om);
+        const double l = std::min(0.95, std::max(0.0, P.spud_l));
+        return std::log(l > 0 ? (1.0 - l) * p + l * pc : p);
     }
     const double mu = mu_eff();
     const double dir = (static_cast<double>(tf) + mu * pc) / (static_cast<double>(dlen) + mu);
@@ -632,6 +634,10 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     uint32_t* tf = tfv.data();
     uint32_t* tfl = tf + U;   // occurrences inside the lead window
     const uint32_t lead_len = static_cast<uint32_t>(std::max(0.0, P.lead_len));
+    // lead_decay > 0: the lead field counts an occurrence at position i with
+    // weight exp(-i / lead_decay) instead of a hard lead_len window.
+    const double tau = P.lead_decay;
+    std::vector<double> tfd(tau > 0 ? U : 0, 0.0);
     uint32_t dlen = 0;
     s.hits.clear();
     if (d >= 0) {
@@ -642,17 +648,21 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
             if (u == 0xFFFF) continue;
             ++tf[u];
             if (i < lead_len) ++tfl[u];
+            if (tau > 0) tfd[u] += std::exp(-static_cast<double>(i) / tau);
             s.hits.push_back({i, u});
         }
     }
     const double T = static_cast<double>(total_);
     const double lw = P.lead_w * long_query_scale(q);
-    const double ll = std::min<double>(dlen, lead_len), lmu = P.lead_mu;
+    const double ll = tau > 0 ? (1.0 - std::exp(-static_cast<double>(dlen) / tau)) / (1.0 - std::exp(-1.0 / tau))
+                              : std::min<double>(dlen, lead_len);
+    const double lmu = P.lead_mu;
     const uint32_t dvd = dv(d);
     for (size_t u = 0; u < U; ++u) {
         const double pc = pbg(q.uniq[u]);
         double lp = log_p(tf[u], dlen, pc, dvd);
-        if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (tfl[u] + lmu * pc) / (ll + lmu));
+        const double tl = tau > 0 ? tfd[u] : static_cast<double>(tfl[u]);
+        if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (tl + lmu * pc) / (ll + lmu));
         f.uni += q.uniq_cnt[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
     }
@@ -696,6 +706,7 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     const bool spud = P.smoothing >= 3;
     const bool two_stage = P.smoothing >= 2 && !spud;
     const double om = P.spud_mu > 0 ? P.spud_mu : 300.0;
+    const double sp_l = std::min(0.95, std::max(0.0, P.spud_l));
     const double ts_l = std::min(0.95, std::max(0.0, P.jm_lambda));
     std::vector<double>& mw = mw_;       // dense model weights, all zero between calls
     double msum = 0, base_const = 0;
@@ -712,7 +723,7 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
             msum += w;
             double pc = pbg(t);
             base_const += w * (jm ? std::log(P.jm_lambda * pc) : two_stage ? std::log(pc)
-                               : spud ? std::log(om * pc) : std::log(mu * pc));
+                               : spud ? (sp_l > 0 ? std::log(pc) : std::log(om * pc)) : std::log(mu * pc));
         }
     }
     const double qn = q.len() ? static_cast<double>(q.len()) : 1.0;
@@ -738,7 +749,8 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
                 s.cnt[w] = 0;
             }
         }
-        if (spud) rmp -= msum * std::log(dv(d) + om);
+        if (spud && sp_l > 0) rmp += msum * std::log((1.0 - sp_l) * om / (dv(d) + om) + sp_l);
+        else if (spud) rmp -= msum * std::log(dv(d) + om);
         else if (two_stage) rmp += msum * std::log((1.0 - ts_l) * mu / (dlen + mu) + ts_l);
         else if (!jm) rmp -= msum * std::log(dlen + mu);
         out[i] = lam * qs / qn + (1 - lam) * rmp + lprior / qn;
