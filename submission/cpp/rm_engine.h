@@ -138,6 +138,8 @@ struct Params {
     // documents is drift. P(w|R) is estimated from that top set instead, so
     // a perturbed seed produces the same ranking as the clean one.
     double fb_lock = 0;
+    double fb_mass = 0;
+    double fb_mass_pow = 1;
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
