@@ -140,6 +140,7 @@ struct Params {
     double fb_lock = 0;
     double fb_mass = 0;
     double fb_mass_pow = 1;
+    double fdm_gap = 0, fdm_w = 0;   // full-dependence pairs: max query gap, weight
     double par_min_tokens = 250000;  // parallelise candidate scoring above this
 };
 
