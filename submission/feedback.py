@@ -13,16 +13,18 @@ sources are always rebuilt and a binary built elsewhere is never loaded
 (a -march=native binary from another CPU could crash the process). Building
 or loading failure raises; there is no Python implementation.
 
-Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h). One
-engine and one index; each track has its own parameter set.
-  Track A  PARAMS_A: F2EXP with a lead-window field (first 8 tokens) and
-           SDM proximity, z-fused with BM25+, plus a document-length
-           prior and a candidate-rank prior (0.12, k=7).
-  Track B  PARAMS: RM3 (lambda 0.85) over a two-stage smoothed query
-           likelihood (mu=550, 0.2 of P(w|C)) with a lead-window field
-           model and F2EXP, all on a fixed per-document scale. The seed is
-           this model's own top 10; if no seed document holds at least
-           0.20 of the posterior, the query-likelihood ranking is returned.
+Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
+  Track A  Two-stage smoothed unigram query likelihood (Dirichlet mu=550,
+           then 0.2 of P(w|C)), with a lead-window field model (first 24
+           tokens, weight 0.05), a document-length prior (0.4 log|D|) and
+           an F2EXP feature (weight 2), all on a fixed per-document scale.
+           A candidate-rank prior (0.12, k=7) is fused on top.
+  Track B  With fb_stable=1, feedback uses the Dirichlet + z-scored F2EXP
+           ranker that scored hidden retention 1 (RM3 lambda 0.9, not 1).
+           Track A's two-stage knobs are restored when the call returns.
+           A seed is replaced by that ranker's own top-10. If no seed
+           document holds at least 0.30 of the posterior, feedback returns
+           that ranker's query-likelihood ranking.
 RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -58,7 +60,7 @@ PARAMS: Dict[str, float] = {
     "qspell": 0,
     "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0.10, "lead_len": 24, "lead_mu": 60,
+    "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
     "len_prior": 0.35,
     "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
     "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
@@ -72,20 +74,6 @@ PARAMS: Dict[str, float] = {
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
     "fb_cov": 0.0, "fb_conf": 0.20, "fb_anchor_exp": 0.5,
     "fb_lock": 1,
-}
-
-# Track A (score_candidates) uses the same engine with its own parameter
-# set: PARAMS overridden by PARAMS_A. This is the 5 Oct 16:52 model (commit
-# d1e6fc1, hidden Track A 0.53765 / 0.45920): an F2EXP field ranker with
-# SDM proximity, z-fused with BM25+. Feedback never reads PARAMS_A.
-PARAMS_A: Dict[str, float] = {
-    "jm_lambda": 0.3, "mu": 100,
-    "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 8,
-    "len_prior": 0.3,
-    "prior_w": 0.12, "prior_k": 7,
-    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
-    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "ax_z": 1,
 }
 
 _lib = None
@@ -145,9 +133,6 @@ def _declare(lib) -> None:
         "rm_get_param": ([c.c_char_p, F64], c.c_int),
         "rm_stats": ([c.c_char_p, c.c_int], c.c_int),
         "rm_score": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
-        "rm_score_a": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
-        "rm_set_param_a": ([c.c_char_p, c.c_double], c.c_int),
-        "rm_get_param_a": ([c.c_char_p, F64], c.c_int),
         "rm_feedback": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
         "rm_explain": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_char_p, c.c_int], c.c_int),
         "rm_relevance_model": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, c.c_char_p, c.c_int], c.c_int),
@@ -188,23 +173,15 @@ def backend() -> str:
 
 
 def set_params(**kw: float) -> None:
-    """Override feedback (Track B) parameters by name (tools/sweep.py)."""
+    """Override engine parameters by name (tools/sweep.py)."""
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
 
 
-def set_params_a(**kw: float) -> None:
-    """Override score_candidates (Track A) parameters by name."""
-    for k, v in kw.items():
-        if _lib.rm_set_param_a(k.encode(), float(v)) != 0:
-            raise KeyError(f"unknown parameter {k!r}")
-
-
-def get_param(name: str, track: str = "B") -> float:
+def get_param(name: str) -> float:
     v = ctypes.c_double()
-    fn = _lib.rm_get_param_a if track == "A" else _lib.rm_get_param
-    if fn(name.encode(), ctypes.byref(v)) != 0:
+    if _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
         raise KeyError(name)
     return v.value
 
@@ -273,7 +250,7 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
     """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
-    return _run(_lib.rm_score_a, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
+    return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
@@ -339,4 +316,3 @@ _lib = _load_native()
 if _lib is None:
     raise RuntimeError("C++ engine failed to build or load")
 set_params(**PARAMS)
-set_params_a(**dict(PARAMS, **PARAMS_A))
