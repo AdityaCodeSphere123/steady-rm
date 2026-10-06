@@ -1,11 +1,7 @@
 #include "analysis.h"
-#include <cctype>
-#include <cstdint>
-#include <cstring>
-#include <string_view>
 
-// Aggressive Fox-style list: used only when pruning the RM3 forward index
-// on large collections (N ≥ 20k). Indexing uses INDEX_STOPWORDS instead.
+#include <unordered_map>
+
 const std::unordered_set<std::string> STOPWORDS = {
     "a", "about", "above", "across", "after", "again", "against", "all", "almost", "alone", "along",
     "already", "also", "although", "always", "among", "an", "and", "another", "any", "anybody", "anyone",
@@ -46,7 +42,6 @@ const std::unordered_set<std::string> STOPWORDS = {
     "work", "worked", "working", "works", "would", "x", "y", "year", "years", "yet", "you", "your", "yours"
 };
 
-// Lucene English stops including question words. Applied at index + query.
 const std::unordered_set<std::string> INDEX_STOPWORDS = {
     "i","me","my","myself","we","our","ours","ourselves","you","your","yours",
     "yourself","yourselves","he","him","his","himself","she","her","hers","herself",
@@ -57,31 +52,6 @@ const std::unordered_set<std::string> INDEX_STOPWORDS = {
     "with","about","against","between","into","through","during","before","after",
     "above","below","to","from","up","down","in","out","on","off","over","under",
     "again","further","then","once","here","there","when","where","why","how","all",
-    "any","both","each","few","more","most","other","some","such","no","nor","not",
-    "only","own","same","so","than","too","very","can","will","just","should","now"
-};
-
-// Function words that almost never distinguish a topic. Question words
-// (what/which/who/how/why), negations (no/not), and modals (can/will)
-// stay in the query — Lucene drops them and that costs nDCG on this set.
-const std::unordered_set<std::string> MINIMAL_STOPWORDS = {
-    "a","an","the","and","or","of","to","in","for","on","at","by","with","from",
-    "as","is","was","are","were","be","been","being","it","its","this","that",
-    "these","those"
-};
-
-// Lucene English minus question words only. Mini-list (qstop_list=2) kept
-// too many function words and dropped hidden A 0.5327→0.5308.
-const std::unordered_set<std::string> LUCENE_MINUS_WH = {
-    "i","me","my","myself","we","our","ours","ourselves","you","your","yours",
-    "yourself","yourselves","he","him","his","himself","she","her","hers","herself",
-    "it","its","itself","they","them","their","theirs","themselves",
-    "this","that","these","those","am","is","are","was","were","be",
-    "been","being","have","has","had","having","do","does","did","doing","a","an",
-    "the","and","but","if","or","because","as","until","while","of","at","by","for",
-    "with","about","against","between","into","through","during","before","after",
-    "above","below","to","from","up","down","in","out","on","off","over","under",
-    "again","further","then","once","here","there","all",
     "any","both","each","few","more","most","other","some","such","no","nor","not",
     "only","own","same","so","than","too","very","can","will","just","should","now"
 };
@@ -306,122 +276,13 @@ public:
     }
 };
 
-// Plural-only S-stemmer (IR_STEMMER=1). Default at build is Porter (2).
-static inline std::string s_stem(const std::string& word) {
-    if (word.size() <= 3) return word;
-    if (word.back() != 's') return word;
-    if (word.size() > 4 && word.compare(word.size() - 3, 3, "ies") == 0)
-        return word.substr(0, word.size() - 3) + "y";
-    if (word.size() > 3 && word.compare(word.size() - 2, 2, "es") == 0) {
-        char third_last = word[word.size() - 3];
-        if (third_last == 's' || third_last == 'x' || third_last == 'z' ||
-            (word.size() > 4 && word.compare(word.size() - 4, 2, "ch") == 0) ||
-            (word.size() > 4 && word.compare(word.size() - 4, 2, "sh") == 0))
-            return word.substr(0, word.size() - 2);
-        return word.substr(0, word.size() - 1);
-    }
-    if (word.back() == 's' && word[word.size() - 2] != 's' && word[word.size() - 2] != 'u')
-        return word.substr(0, word.size() - 1);
-    return word;
-}
-
 thread_local PorterStemmer g_porter;
-// One cache per stemmer mode (A2 change: the stemmer can now differ between
-// prepare() calls in one process, so the cache must be keyed by mode).
-thread_local std::unordered_map<std::string, std::string> g_stem_cache[3];
-
-uint8_t g_tok_alnum[256];
-uint8_t g_tok_lower[256];
-const bool g_tok_inited = []() {
-    for (int i = 0; i < 256; ++i) {
-        unsigned char c = static_cast<unsigned char>(i);
-        if (std::isalnum(c)) {
-            g_tok_alnum[i] = 1;
-            g_tok_lower[i] = static_cast<uint8_t>(std::tolower(c));
-        }
-    }
-    return true;
-}();
+// One cache per mode: the stemmer can change between prepare() calls.
+thread_local std::unordered_map<std::string, std::string> g_stem_cache[2];
 
 const std::string& apply_stem(const std::string& w, uint8_t stemmer) {
-    auto& cache = g_stem_cache[stemmer > 2 ? 2 : stemmer];
+    auto& cache = g_stem_cache[stemmer ? 1 : 0];
     auto it = cache.find(w);
     if (it != cache.end()) return it->second;
-    std::string s;
-    if (stemmer <= 0) s = w;
-    else if (stemmer == 1) s = s_stem(w);
-    else s = g_porter.stem(w);
-    return cache.emplace(w, std::move(s)).first->second;
-}
-
-// Dotted initials: "U.S." / "F.B.I." are otherwise three length-1 tokens and
-// vanish. Glue single letters separated only by '.' (u.s. → us). A lone
-// letter or "a. m." with a space still drops. Shared by query and index.
-template <typename Fn>
-static void each_surface(std::string_view text, Fn&& emit) {
-    (void)g_tok_inited;
-    std::string tok;
-    std::string acro;
-    tok.reserve(32);
-    acro.reserve(8);
-
-    auto flush_acro = [&]() {
-        if (acro.size() >= 2) emit(std::string_view(acro));
-        acro.clear();
-    };
-
-    auto take_tok = [&]() {
-        if (tok.empty()) return;
-        if (tok.size() == 1 && tok[0] >= 'a' && tok[0] <= 'z') {
-            acro.push_back(tok[0]);
-        } else {
-            flush_acro();
-            if (tok.size() > 1) emit(std::string_view(tok));
-        }
-        tok.clear();
-    };
-
-    for (unsigned char uc : text) {
-        if (g_tok_alnum[uc]) {
-            tok.push_back(static_cast<char>(g_tok_lower[uc]));
-        } else {
-            take_tok();
-            if (uc != static_cast<unsigned char>('.')) flush_acro();
-        }
-    }
-    take_tok();
-    flush_acro();
-}
-
-std::vector<std::pair<std::string, uint32_t>>
-cpp_tokenize(const std::string& text, const TokenizerCfg& cfg) {
-    std::vector<std::pair<std::string, uint32_t>> tokens;
-    tokens.reserve(text.size() / 6);
-    uint32_t pos = 0;
-
-    each_surface(text, [&](std::string_view sv) {
-        std::string surface(sv);
-        uint32_t this_pos = pos++;
-        if (cfg.remove_stop && INDEX_STOPWORDS.count(surface)) return;
-        tokens.push_back({apply_stem(surface, cfg.stemmer), this_pos});
-    });
-    return tokens;
-}
-
-void accumulate_tf(
-    std::string_view text, const TokenizerCfg& cfg, uint32_t title_window,
-    std::unordered_map<std::string, uint32_t>& term_data,
-    std::unordered_map<std::string, uint32_t>& title_tf,
-    uint32_t& d_len)
-{
-    uint32_t pos = 0;
-    each_surface(text, [&](std::string_view sv) {
-        std::string surface(sv);
-        uint32_t this_pos = pos++;
-        if (cfg.remove_stop && INDEX_STOPWORDS.count(surface)) return;
-        const std::string& stem = apply_stem(surface, cfg.stemmer);
-        term_data[stem]++;
-        if (this_pos < title_window) title_tf[stem]++;
-        ++d_len;
-    });
+    return cache.emplace(w, stemmer ? g_porter.stem(w) : w).first->second;
 }

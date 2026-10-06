@@ -62,11 +62,6 @@ int rm_set_param(const char* name, double v) {
     return rm::set_param(eng().P, name, v) ? 0 : -1;
 }
 
-int rm_get_param(const char* name, double* v) {
-    std::lock_guard<std::mutex> g(g_m);
-    return rm::get_param(eng().P, name, *v) ? 0 : -1;
-}
-
 int rm_stats(char* buf, int len) {
     std::lock_guard<std::mutex> g(g_m);
     return copy_buf(eng().stats_json(), buf, len);
@@ -85,27 +80,6 @@ int rm_feedback(const char* query, const char* seeds, int ns, const char* cands,
     catch (const std::exception& e) { g_err = e.what(); return -1; }
 }
 
-// JSON with everything one feedback call derived (report / oral defence).
-int rm_explain(const char* query, const char* seeds, int ns, const char* cands, int nc, char* buf, int len) {
-    std::lock_guard<std::mutex> g(g_m);
-    rm::Explain ex;
-    auto cv = split(cands, nc);
-    if (cv.empty()) cv.emplace_back("");
-    eng().feedback(query, split(seeds, ns), cv, 1, &ex);
-    std::ostringstream o;
-    o.precision(10);
-    o << "{\"query_terms\":[";
-    for (size_t i = 0; i < ex.qterms.size(); ++i) o << (i ? "," : "") << jstr(ex.qterms[i]);
-    o << "],\"seed_weights\":[";
-    for (size_t i = 0; i < ex.seed_weights.size(); ++i)
-        o << (i ? "," : "") << "[" << jstr(ex.seed_weights[i].first) << "," << ex.seed_weights[i].second << "]";
-    o << "],\"model\":[";
-    for (size_t i = 0; i < ex.rm.size(); ++i) o << (i ? "," : "") << "[" << jstr(ex.rm[i].first) << "," << ex.rm[i].second << "]";
-    o << "],\"lambda\":" << ex.lambda << ",\"coherence\":" << ex.coherence << ",\"clarity\":" << ex.clarity
-      << ",\"mu\":" << ex.mu << ",\"qpp\":" << ex.qpp << "}";
-    return copy_buf(o.str(), buf, len);
-}
-
 // The estimated relevance model alone: variant 1 = RM1, 2 = RM2.
 int rm_relevance_model(const char* query, const char* seeds, int ns, int variant, char* buf, int len) {
     std::lock_guard<std::mutex> g(g_m);
@@ -116,14 +90,6 @@ int rm_relevance_model(const char* query, const char* seeds, int ns, int variant
     for (size_t i = 0; i < m.size(); ++i) o << (i ? "," : "") << "[" << jstr(m[i].first) << "," << m[i].second << "]";
     o << "]";
     return copy_buf(o.str(), buf, len);
-}
-
-int rm_analyze(const char* query, char* buf, int len) {
-    std::lock_guard<std::mutex> g(g_m);
-    auto t = eng().analyze_query(query);
-    std::string o = "[";
-    for (size_t i = 0; i < t.size(); ++i) o += (i ? "," : "") + jstr(t[i]);
-    return copy_buf(o + "]", buf, len);
 }
 
 }  // extern "C"

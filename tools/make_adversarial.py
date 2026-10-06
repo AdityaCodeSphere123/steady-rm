@@ -21,18 +21,24 @@ Finally the --n queries with the largest mean drop are kept.
 
   python -m tools.make_adversarial --root data/full --n 5 --out submission/adversarial_set.json
 """
-import argparse, json, math, os
+import argparse, glob, json, os
 
 from submission import feedback as fb
-from tools.multi_sweep import find
 from tools.sweep import ndcg10, read_candidates, read_qrels, read_queries
 
-NAIVE = dict(beta=0, anchor_min=0, term_support=1, agree_gamma=0, fb_terms=50, fb_docs=10,
-             w_od=0, w_uw=0, prior_w=0, lead_w=0, qlen_shrink=0, min_cf=1,
-             rm2_mix=0, per_doc_cap=1, fb_mu=0, idf_power=0, len_prior=0, qpp_w=0, small_seed_n=0, longq_n=0, rm_variant=3)
+NAIVE = dict(beta=0, fb_terms=50, fb_docs=10, w_od=0, w_uw=0, lead_w=0, fb_mu=0, idf_power=0,
+             support_frac=0, fb_qterms=0, fb_cov=0, fb_anchor_exp=0, fb_mode=0, fb_sdm=0)
 NAIVE["lambda"] = 0.5
 TEXTBOOK = dict(NAIVE, beta=-1)
 DEFENDERS = {"naive": NAIVE, "textbook": TEXTBOOK, "ours": {}}
+
+
+def find(d, pats):
+    for p in pats:
+        hits = sorted(glob.glob(os.path.join(d, p)))
+        if hits:
+            return hits[0]
+    return None
 
 
 def use(cfg):
@@ -59,7 +65,7 @@ def main():
         pool, rel = cands.get(qid), qrels.get(qid)
         if not pool or not rel:
             continue
-        clean, dfn = {}, {}
+        clean = {}
         for name, cfg in DEFENDERS.items():
             use(cfg)
             seed = [d for d, _ in fb.score_candidates(text, pool, 10)]
