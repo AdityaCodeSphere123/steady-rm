@@ -48,9 +48,9 @@ _FLAG_SETS = [
 # best so far: 0.53633065	0.45904990	0.53655742	0.99990104	0.99815275
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "qspell": 0,
-    "smoothing": 3, "spud_mu": 800, "spud_bg": 1, "jm_lambda": 0.50, "mu": 550,
-    "w_od": 0.05, "w_uw": 0.1, "uw_window": 8,
+    "qspell": 0, "tok_keep1": 1,
+    "smoothing": 3, "spud_mu": 500, "spud_bg": 1, "jm_lambda": 0.50, "mu": 550,
+    "w_od": 0.05, "w_uw": 0.1, "uw_window": 6,
     "lead_w": 0.1, "lead_len": 20, "lead_mu": 60,
     "len_prior": 0,
     "prior_w": 0, "prior_k": 4,
