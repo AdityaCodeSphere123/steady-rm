@@ -41,18 +41,19 @@ def main():
             continue
         fb.set_params(**base)
         fb.prepare(corpus)
-        seeds, A = {}, 0.0
-        for q, t in qs:
-            top = [d for d, _ in fb.score_candidates(t, cands[q], max(10, a.depth))]
-            A += ndcg_at_k(top[:10], qr[q], 10)
-            seeds[q] = cands[q][:a.depth] if a.pool_seed else top[:a.depth]
-        A /= len(qs)
+        cell = []
         for c, tag in zip(combos, tags):
             fb.set_params(**{**base, **dict(zip(keys, c))})
-            B = sum(ndcg_at_k([d for d, _ in fb.relevance_model_feedback(t, seeds[q], cands[q], 10)], qr[q], 10)
-                    for q, t in qs) / len(qs)
+            A = B = 0.0
+            for q, t in qs:
+                top = [d for d, _ in fb.score_candidates(t, cands[q], max(10, a.depth))]
+                A += ndcg_at_k(top[:10], qr[q], 10)
+                seed = cands[q][:a.depth] if a.pool_seed else top[:a.depth]
+                B += ndcg_at_k([d for d, _ in fb.relevance_model_feedback(t, seed, cands[q], 10)], qr[q], 10)
+            A, B = A / len(qs), B / len(qs)
             gains[tag][s] = B - A
-        print(f"{s:10s} n={len(qs):4d} A={A:.4f} | " + "  ".join(f"[{t}] {gains[t][s]:+.4f}" for t in tags), flush=True)
+            cell.append(f"[{tag}] A {A:.4f} {B - A:+.4f}")
+        print(f"{s:10s} n={len(qs):4d} | " + "  ".join(cell), flush=True)
     print()
     rows = []
     for t in tags:
