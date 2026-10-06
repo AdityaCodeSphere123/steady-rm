@@ -60,7 +60,7 @@ PARAMS: Dict[str, float] = {
     "qspell": 0,
     "smoothing": 2, "jm_lambda": 0.20, "mu": 550,
     "w_od": 0, "w_uw": 0, "uw_window": 8,
-    "lead_w": 0.05, "lead_len": 24, "lead_mu": 60,
+    "lead_w": 0.08, "lead_len": 24, "lead_mu": 60,
     "len_prior": 0.35,
     "prior_w": 0.12, "prior_k": 7, "fb_prior_w": 0,
     "ranker": 0, "ax_b": 0.65, "ax_k": 0.20, "ax_c": 1.0, "ax_w": 2.0, "ax_z": 0,
