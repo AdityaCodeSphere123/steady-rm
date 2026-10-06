@@ -18,9 +18,10 @@ Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
            (spud_mu=800, df background), mixed with a lead-field LM over
            the first 20 tokens (weight 0.1, Dirichlet 60), plus sequential
            dependence (ordered 0.05, unordered window 12 0.1, Dirichlet 550).
-  Track B  RM3 inside that same model, query part included:
-           0.9 * Track A + 0.1 * sum_w P(w|R) log P(w|D), P(w|R) = RM1 over
-           the given seed (P(D|Q) sharpened by beta=12, 40 terms). With
+  Track B  RM3 on that same model: 0.95 * S_A(D) + 0.05 * E(D) / 4, where
+           S_A is the exact score_candidates() score and E(D) = sum_w
+           P(w|R) log P(w|D), centred over the pool. P(w|R) = RM1 over the
+           supplied seed (P(D|Q) sharpened by beta=12, 40 terms). With
            lambda set to 1, feedback returns the Track A ranking and scores.
 RM_THREADS=n caps threads (max 4).
 """
@@ -42,8 +43,8 @@ _FLAG_SETS = [
 ]
 
 # SPUD + lead-field + SDM query likelihood (Track A), tuned on 2*SciFact +
-# ANTIQUE. RM3 weight on the original query is 0.9, estimated from the
-# supplied seed (fb_lock and fb_conf off).
+# ANTIQUE. Track B: RM3 on the Track A score (fb_mode 1), lambda 0.95,
+# expansion scale 4, estimated from the supplied seed (fb_lock off).
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
     "qspell": 0,
@@ -56,10 +57,10 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 250, "fb_docs": 10, "fb_terms": 40, "beta": 12, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
-    "lambda": 0.9,
+    "lambda": 0.95,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 1,
-    "fb_mode": 0, "fb_loo": 0, "fb_scale": 8,
+    "fb_mode": 1, "fb_loo": 0, "fb_scale": 4,
     "fb_cov": 0.25, "fb_conf": 0, "fb_anchor_exp": 1.0,
     "fb_lock": 0,
 }
