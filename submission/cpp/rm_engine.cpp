@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) X(fb_match) X(qidf_w) X(qcov_w) \
     X(pool_lambda) X(pool_docs) \
-    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(bm25_w) X(bm25_k1) X(bm25_b) X(qspell)
+    X(ranker) X(ax_b) X(ax_k) X(ax_c) X(ax_w) X(ax_z) X(bm25_w) X(bm25_k1) X(bm25_b) X(bm25_delta) X(qspell)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -839,10 +839,13 @@ std::vector<double> Engine::bm25_pool(const Query& q, const std::vector<int32_t>
             const uint16_t u = qmark_[t[p]];
             if (u != 0xFFFF) ++tf[u];
         }
-        const double norm = k1 * (1.0 - b + b * dlen / avg);
+        const double norm = k1 * (1.0 - b + b * static_cast<double>(dlen) / avg);
         double s = 0;
-        for (size_t u = 0; u < U; ++u)
-            if (tf[u]) s += q.uniq_cnt[u] * idf[u] * tf[u] * (k1 + 1.0) / (tf[u] + norm);
+        for (size_t u = 0; u < U; ++u) {
+            if (!tf[u]) continue;
+            const double f = static_cast<double>(tf[u]);
+            s += q.uniq_cnt[u] * idf[u] * ((f * (k1 + 1.0)) / (f + norm) + P.bm25_delta);
+        }
         out[i] = s;
     }
     return out;
@@ -913,6 +916,11 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
     return top_k(track_a(q, cands, docs), cands, k);
 }
 
+std::vector<Ranked> Engine::score_track_a(std::string_view query, const std::vector<std::string_view>& cands, int k) {
+    struct Swap { Params& a; Params& b; Swap(Params& x, Params& y) : a(x), b(y) { std::swap(a, b); } ~Swap() { std::swap(a, b); } } sw(P, PA);
+    return score_candidates(query, cands, k);
+}
+
 // The final Track A score of every candidate (before sorting). Shared by
 // score_candidates() and feedback(fb_mode=1), so Track B starts from the
 // exact same numbers.
@@ -954,12 +962,18 @@ void Engine::add_lexical(const Query& q, const std::vector<int32_t>& docs, std::
             s[i] = (per_term ? s[i] : s[i] / qn) + lam * ax[i] / qn;
         return;
     }
-    if (P.ax_w <= 0) return;
-    if (docs.size() <= 1) return;
+    if ((P.ax_w <= 0 && P.bm25_w <= 0) || docs.size() <= 1) return;
     zscore(s);
-    auto ax = f2exp_pool(q, docs);
-    zscore(ax);
-    for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+    if (P.bm25_w > 0) {
+        auto bm = bm25_pool(q, docs);
+        zscore(bm);
+        for (size_t i = 0; i < s.size(); ++i) s[i] += P.bm25_w * bm[i];
+    }
+    if (P.ax_w > 0) {
+        auto ax = f2exp_pool(q, docs);
+        zscore(ax);
+        for (size_t i = 0; i < s.size(); ++i) s[i] += P.ax_w * ax[i];
+    }
 }
 
 // ---------------------------------------------------------------------------

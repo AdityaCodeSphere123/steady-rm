@@ -13,18 +13,16 @@ sources are always rebuilt and a binary built elsewhere is never loaded
 (a -march=native binary from another CPU could crash the process). Building
 or loading failure raises; there is no Python implementation.
 
-Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h):
-  Track A  Two-stage smoothed unigram query likelihood (Dirichlet mu=550,
-           then 0.2 of P(w|C)), with a lead-window field model (first 24
-           tokens, weight 0.05), a document-length prior (0.4 log|D|) and
-           an F2EXP feature (weight 2), all on a fixed per-document scale.
-           A candidate-rank prior (0.12, k=7) is fused on top.
-  Track B  With fb_stable=1, feedback uses the Dirichlet + z-scored F2EXP
-           ranker that scored hidden retention 1 (RM3 lambda 0.9, not 1).
-           Track A's two-stage knobs are restored when the call returns.
-           A seed is replaced by that ranker's own top-10. If no seed
-           document holds at least 0.30 of the posterior, feedback returns
-           that ranker's query-likelihood ranking.
+Model (maths in cpp/rm_engine.cpp, every knob in cpp/rm_engine.h). One
+engine and one index; each track has its own parameter set.
+  Track A  PARAMS_A: F2EXP with a lead-window field (first 8 tokens) and
+           SDM proximity, z-fused with BM25+, plus a document-length
+           prior and a candidate-rank prior (0.12, k=7).
+  Track B  PARAMS: RM3 (lambda 0.85) over a two-stage smoothed query
+           likelihood (mu=550, 0.2 of P(w|C)) with a lead-window field
+           model and F2EXP, all on a fixed per-document scale. The seed is
+           this model's own top 10; if no seed document holds at least
+           0.20 of the posterior, the query-likelihood ranking is returned.
 RM_THREADS=n caps threads (max 4).
 """
 import ctypes
@@ -76,48 +74,44 @@ PARAMS: Dict[str, float] = {
     "fb_lock": 1,
 }
 
-# Track A (score_candidates) runs a separate engine, submission/cpp_a: the
-# 5 Oct 16:52 model (commit d1e6fc1, hidden Track A 0.53765 / 0.45920),
-# F2EXP + BM25 fused with a two-stage query-likelihood field model.
-# Track B never reads it: feedback re-ranks with the engine above.
-_CPP_A = os.path.join(_HERE, "cpp_a")
+# Track A (score_candidates) uses the same engine with its own parameter
+# set: PARAMS overridden by PARAMS_A. This is the 5 Oct 16:52 model (commit
+# d1e6fc1, hidden Track A 0.53765 / 0.45920): an F2EXP field ranker with
+# SDM proximity, z-fused with BM25+. Feedback never reads PARAMS_A.
 PARAMS_A: Dict[str, float] = {
-    "stemmer": 2, "doc_stop": 0, "query_stop": 2, "qstop_min_len": 0, "qstop_list": 0,
-    "smoothing": 2, "jm_lambda": 0.3, "mu": 100,
+    "jm_lambda": 0.3, "mu": 100,
     "w_od": 0.16, "w_uw": 0.5, "uw_window": 16,
-    "lead_w": 0.22, "lead_len": 8, "lead_mu": 60,
-    "len_prior": 0.3, "longq_n": 0,
+    "lead_w": 0.22, "lead_len": 8,
+    "len_prior": 0.3,
     "prior_w": 0.12, "prior_k": 7,
-    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25, "bm25_z": 1.0,
-    "pool_lambda": 1.0, "pool_docs": 8,
-    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0,
+    "bm25_w": 1.0, "bm25_k1": 1.2, "bm25_b": 0.4, "bm25_delta": 0.25,
+    "ranker": 1, "ax_b": 0.6, "ax_k": 0.35, "ax_c": 1.0, "ax_w": 0.0, "ax_z": 1,
 }
 
 _lib = None
-_lib_a = None
 
-def _digest(flags: Sequence[str], cpp: str = _CPP) -> str:
+def _digest(flags: Sequence[str]) -> str:
     h = hashlib.sha256()
     for name in _SOURCES + _HEADERS:
-        with open(os.path.join(cpp, name), "rb") as fh:
+        with open(os.path.join(_CPP, name), "rb") as fh:
             h.update(name.encode()); h.update(fh.read())
     h.update(" ".join(flags).encode())
     return h.hexdigest()[:16]
 
 
-def _compile(out: str, flags: Sequence[str], cpp: str = _CPP) -> bool:
+def _compile(out: str, flags: Sequence[str]) -> bool:
     """Compile the three translation units in parallel (one g++ each, the
     grading VM has 4 cores), then link. Atomic rename at the end."""
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cxx = os.environ.get("CXX", "g++")
     tag = f"{os.getpid()}"
     objs, procs = [], []
-    cflags = [f for f in flags if f != "-shared" and not f.startswith("-Wl,")]
+    cflags = [f for f in flags if f != "-shared"]
     try:
         for src in _SOURCES:
             obj = f"{out}.{src}.{tag}.o"
             objs.append(obj)
-            procs.append(subprocess.Popen([cxx, *cflags, "-c", os.path.join(cpp, src), "-o", obj],
+            procs.append(subprocess.Popen([cxx, *cflags, "-c", os.path.join(_CPP, src), "-o", obj],
                                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
         ok = all(p.wait(timeout=300) == 0 for p in procs)
         tmp = f"{out}.{tag}.tmp"
@@ -151,6 +145,9 @@ def _declare(lib) -> None:
         "rm_get_param": ([c.c_char_p, F64], c.c_int),
         "rm_stats": ([c.c_char_p, c.c_int], c.c_int),
         "rm_score": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
+        "rm_score_a": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
+        "rm_set_param_a": ([c.c_char_p, c.c_double], c.c_int),
+        "rm_get_param_a": ([c.c_char_p, F64], c.c_int),
         "rm_feedback": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_int, I32, F64], c.c_int),
         "rm_explain": ([c.c_char_p, c.c_char_p, c.c_int, c.c_char_p, c.c_int, c.c_char_p, c.c_int], c.c_int),
         "rm_relevance_model": ([c.c_char_p, c.c_char_p, c.c_int, c.c_int, c.c_char_p, c.c_int], c.c_int),
@@ -161,22 +158,18 @@ def _declare(lib) -> None:
         fn.argtypes, fn.restype = args, res
 
 
-def _load_native(cpp: str = _CPP, prefix: str = "librm"):
+def _load_native():
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
     extra = os.environ.get("RM_EXTRA_FLAGS", "").split()   # dev only, e.g. sanitizers
-    # Both engines export the same C++ globals; -Bsymbolic keeps each
-    # library bound to its own copy under ELF symbol interposition.
-    if sys.platform.startswith("linux"):
-        extra = extra + ["-Wl,-Bsymbolic"]
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
         try:
-            digest = _digest(flags, cpp)
+            digest = _digest(flags)
         except OSError:
             return None
         for d in dirs:
-            path = os.path.join(d, f"{prefix}_{digest}.so")
+            path = os.path.join(d, f"librm_{digest}.so")
             try:
-                if not os.path.exists(path) and not _compile(path, flags, cpp):
+                if not os.path.exists(path) and not _compile(path, flags):
                     continue
                 lib = ctypes.CDLL(path)
                 _declare(lib)
@@ -195,15 +188,23 @@ def backend() -> str:
 
 
 def set_params(**kw: float) -> None:
-    """Override engine parameters by name (tools/sweep.py)."""
+    """Override feedback (Track B) parameters by name (tools/sweep.py)."""
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
 
 
-def get_param(name: str) -> float:
+def set_params_a(**kw: float) -> None:
+    """Override score_candidates (Track A) parameters by name."""
+    for k, v in kw.items():
+        if _lib.rm_set_param_a(k.encode(), float(v)) != 0:
+            raise KeyError(f"unknown parameter {k!r}")
+
+
+def get_param(name: str, track: str = "B") -> float:
     v = ctypes.c_double()
-    if _lib.rm_get_param(name.encode(), ctypes.byref(v)) != 0:
+    fn = _lib.rm_get_param_a if track == "A" else _lib.rm_get_param
+    if fn(name.encode(), ctypes.byref(v)) != 0:
         raise KeyError(name)
     return v.value
 
@@ -253,12 +254,11 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
 def prepare(corpus_path: str) -> None:
     """One pass over the corpus (4 threads): tokenise, build P(w|C).
     Idempotent for the same path."""
-    for lib in (_lib, _lib_a):
-        if lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
-            raise RuntimeError(lib.rm_last_error().decode())
+    if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
+        raise RuntimeError(_lib.rm_last_error().decode())
 
 
-def _run(fn, pool: List[str], k: int, *args, lib=None) -> List[Tuple[str, float]]:
+def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
     k = min(int(k), len(pool))
     if k <= 0:
         return []
@@ -267,13 +267,13 @@ def _run(fn, pool: List[str], k: int, *args, lib=None) -> List[Tuple[str, float]
     sc = (ctypes.c_double * k)()
     n = fn(*args, c, nc, k, idx, sc)
     if n < 0:
-        raise RuntimeError((lib or _lib).rm_last_error().decode())
+        raise RuntimeError(_lib.rm_last_error().decode())
     return [(pool[idx[i]], float(sc[i])) for i in range(n)]
 
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
-    """Rerank candidate_doc_ids with the Track A engine (cpp_a)."""
-    return _run(_lib_a.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), lib=_lib_a)
+    """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
+    return _run(_lib.rm_score_a, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
@@ -336,10 +336,7 @@ def _worst(query, pool, k, s, ns):
 
 
 _lib = _load_native()
-_lib_a = _load_native(_CPP_A, "librm_a")
-if _lib is None or _lib_a is None:
+if _lib is None:
     raise RuntimeError("C++ engine failed to build or load")
 set_params(**PARAMS)
-for _k, _v in PARAMS_A.items():
-    if _lib_a.rm_set_param(_k.encode(), float(_v)) != 0:
-        raise KeyError(f"unknown Track A parameter {_k!r}")
+set_params_a(**dict(PARAMS, **PARAMS_A))
