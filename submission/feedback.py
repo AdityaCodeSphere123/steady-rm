@@ -68,7 +68,7 @@ PARAMS: Dict[str, float] = {
     "fb_mu": 400, "fb_docs": 10, "fb_terms": 20, "beta": 1, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
-    "lambda": 0.9,
+    "lambda": 0.85,
     "qlen_shrink": 0, "small_seed_n": 0,
     "fb_sdm": 0,
     "fb_mode": 0, "fb_loo": 0, "fb_seed_ql": 1, "fb_scale": 8,
