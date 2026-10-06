@@ -25,7 +25,7 @@ namespace rm {
     X(prior_k) X(rm_variant) X(rm2_mix) X(rm2_uniform_prior) X(fb_mu) X(fb_docs) X(fb_terms) \
     X(beta) X(seed_sdm) X(trim_floor) X(anchor_min) X(term_support) X(support_frac) X(per_doc_cap) X(min_cf) \
     X(idf_power) X(idf_select) X(fb_qterms) X(agree_gamma) X(lambda) X(lambda_min) X(lambda_max) X(coh_w) X(clarity_scale) \
-    X(fb_sdm) X(fb_prior_w) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
+    X(fb_sdm) X(fb_rm_w) X(fb_mode) X(fb_loo) X(fb_seed_ql) X(fb_scale) X(fb_corr_pow) X(par_min_tokens) X(lead_w) X(lead_len) X(lead_mu) X(lam_qlen_slope) \
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
@@ -882,19 +882,22 @@ std::vector<Ranked> Engine::top_k(const std::vector<double>& fused, const std::v
     return out;
 }
 
-std::vector<Ranked> Engine::pool_order(const std::vector<std::string_view>& ids, int k) const {
-    std::vector<Ranked> out;
-    for (size_t i = 0; i < ids.size() && static_cast<int>(i) < k; ++i) out.push_back({static_cast<int32_t>(i), -static_cast<double>(i)});
-    return out;
-}
-
 // ---------------------------------------------------------------------------
 // Track A
 // ---------------------------------------------------------------------------
 std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::vector<std::string_view>& cands, int k) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
-    if (q.terms.empty()) return pool_order(cands, k);
+    if (q.terms.empty()) {
+        // No query term in the collection: only the document prior is left,
+        // so longer documents first (the length prior), then doc id.
+        std::vector<double> len(cands.size(), -1.0);
+        for (size_t i = 0; i < cands.size(); ++i) {
+            const int32_t d = doc_index(cands[i]);
+            if (d >= 0) len[i] = std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d]));
+        }
+        return top_k(len, cands, k);
+    }
     ensure_pair_stats(q);
     Marks mk(*this, q);
     std::vector<int32_t> docs(cands.size());
@@ -1279,23 +1282,8 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
 std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                      const std::vector<std::string_view>& cands, int k, Explain* ex) {
     if (cands.empty() || k <= 0) return {};
-    // The rank prior reads the order of cands. For the whole call (seed
-    // lock, fallback to score_candidates, final ranking) it is fb_prior_w.
-    struct Restore { double& v; double saved; ~Restore() { v = saved; } } restore{P.prior_w, P.prior_w};
-    if (P.fb_prior_w >= 0) P.prior_w = P.fb_prior_w;
     Query q = parse_query(query);
-    if (q.terms.empty()) {
-        // No query term in the collection. The grader reorders the pool in
-        // its noisy runs, so with fb_prior_w >= 0 the pool order is not used:
-        // longer documents first (the length prior), then doc id.
-        if (P.fb_prior_w < 0) return pool_order(cands, k);
-        std::vector<double> len(cands.size(), -1.0);
-        for (size_t i = 0; i < cands.size(); ++i) {
-            const int32_t d = doc_index(cands[i]);
-            if (d >= 0) len[i] = std::log(1.0 + static_cast<double>(tok_off_[d + 1] - tok_off_[d]));
-        }
-        return top_k(len, cands, k);
-    }
+    if (q.terms.empty()) return score_candidates(query, cands, k);
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
