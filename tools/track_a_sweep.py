@@ -27,12 +27,17 @@ def map10(ranked, qrels_q):
 
 
 def load(name):
+    half = None
+    if "@" in name:
+        name, half = name.split("@")
     weak = name.endswith("_weak")
     d = os.path.join(ROOT, name[:-5] if weak else name)
     qs = read_queries(os.path.join(d, "queries_dev.tsv"))
     qr = read_qrels(os.path.join(d, "qrels_dev.txt"))
     cands = read_candidates(os.path.join(d, "candidates_weak.jsonl" if weak else "candidates_dev.jsonl"))
     qs = [(q, t) for q, t in qs if q in cands and q in qr]
+    if half:
+        qs = [x for i, x in enumerate(qs) if (i % 2 == 0) == (half == "even")]
     return os.path.join(d, "corpus.jsonl"), qs, qr, cands
 
 
