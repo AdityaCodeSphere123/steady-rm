@@ -55,7 +55,7 @@ PARAMS: Dict[str, float] = {
     "len_prior": 0,
     "prior_w": 0, "prior_k": 4,
     "rm_variant": 3,
-    "fb_mu": 250, "fb_docs": 5, "fb_terms": 80, "beta": 30, "idf_power": 0.5,
+    "fb_mu": 100, "fb_docs": 5, "fb_terms": 80, "beta": 40, "idf_power": 0.5,
     "idf_select": 1, "fb_qterms": 1, "support_frac": 0.20,
     "anchor_min": 0, "term_support": 2, "per_doc_cap": 1, "min_cf": 1,
     "lambda": 0.9,
