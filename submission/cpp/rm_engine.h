@@ -111,7 +111,6 @@ struct Params {
     double coh_w = 0.65;         // adaptive: quality = coh_w*coherence + (1-coh_w)*clarity
     double clarity_scale = 6.0;
     double fb_sdm = 1;           // RM3 query part uses the SDM score
-    double fb_prior_w = -1;      // rank prior in feedback (-1 = same as prior_w)
     // How the relevance model enters the Track A ranker:
     //   0  RM3 inside the language-model part, then z-score / prior
     //   1  score = lambda * S_A(D) + (1-lambda) * z(sum_w P(w|R) log P(w|D)),
@@ -207,7 +206,6 @@ private:
     std::vector<Ranked> top_k(const std::vector<double>& fused, const std::vector<std::string_view>& ids, int k) const;
     std::vector<double> rm_pool(const std::vector<int32_t>& docs,
                                 const std::vector<std::pair<uint32_t, double>>& model) const;
-    std::vector<Ranked> pool_order(const std::vector<std::string_view>& ids, int k) const;
 
     // Relevance-model internals.
     struct Seed { int32_t d; double w; };
