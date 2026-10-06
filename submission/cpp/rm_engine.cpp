@@ -29,7 +29,7 @@ namespace rm {
     X(lam_qlen_pivot) X(qlen_shrink) X(qpp_w) X(qpp_lo) X(qpp_hi) \
     X(len_prior) X(small_seed_n) X(longq_n) X(fb_cov) X(fb_conf) X(fb_anchor_exp) X(fb_lock) \
     X(pool_lambda) X(pool_docs) \
-    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay)
+    X(qspell) X(spud_mu) X(spud_bg) X(spud_l) X(lead_decay) X(fb_mass) X(fb_mass_pow)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -1350,7 +1350,53 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
             double w = std::pow(std::max(0.0, rho), P.fb_corr_pow);
             for (double& x : r) x *= w;
         }
-        for (size_t i = 0; i < sa.size(); ++i) sa[i] = lam * sa[i] + (1.0 - lam) * r[i];
+        double mass = 1.0;
+        if (P.fb_mass > 0) {
+            // Unnormalised RM1 evidence: the seed's share of the softmax
+            // P(D|Q) (same beta as seed_weights) over the candidate pool
+            // (fb_mass=1), or relative to the pool's Track A top-|seed|
+            // (fb_mass=2). Feedback is trusted in proportion to it.
+            const double qn = static_cast<double>(q.len());
+            const double beta = P.beta < 0 ? qn : P.beta;
+            std::vector<double> mq(docs.size(), -1e300);
+            double best = -1e300;
+            for (size_t i = 0; i < docs.size(); ++i) {
+                if (docs[i] < 0) continue;
+                mq[i] = qpart(q, doc_features(q, docs[i], s), P.seed_sdm > 0) / qn;
+                best = std::max(best, mq[i]);
+            }
+            std::unordered_map<int32_t, double> ew;
+            double zpool = 0;
+            for (size_t i = 0; i < docs.size(); ++i) {
+                if (docs[i] < 0 || ew.count(docs[i])) continue;
+                double e = std::exp(beta * (mq[i] - best));
+                ew[docs[i]] = e;
+                zpool += e;
+            }
+            double zseed = 0;
+            std::unordered_set<int32_t> seen;
+            for (auto id : seed_ids) {
+                int32_t d = doc_index(id);
+                if (d < 0 || !seen.insert(d).second) continue;
+                auto it = ew.find(d);
+                zseed += it != ew.end() ? it->second
+                                        : std::exp(beta * (qpart(q, doc_features(q, d, s), P.seed_sdm > 0) / qn - best));
+            }
+            double zref = zpool;
+            if (P.fb_mass >= 2) {
+                auto top = top_k(sa, cands, static_cast<int>(std::max<size_t>(1, seen.size())));
+                std::unordered_set<int32_t> tseen;
+                zref = 0;
+                for (auto& t : top) {
+                    int32_t d = docs[t.idx];
+                    if (d >= 0 && tseen.insert(d).second) zref += ew[d];
+                }
+            }
+            mass = zref > 0 ? std::min(1.0, zseed / zref) : 0.0;
+            if (P.fb_mass_pow != 1) mass = std::pow(mass, P.fb_mass_pow);
+        }
+        const double wl = (1.0 - lam) * mass;
+        for (size_t i = 0; i < sa.size(); ++i) sa[i] = (1.0 - wl) * sa[i] + wl * r[i];
         return top_k(sa, cands, k);
     }
     // RM3 query expansion, then the Track A score. The language-model
