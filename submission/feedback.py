@@ -41,6 +41,7 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
+# params result: 0.53808918	0.46063143	0.53814224	1.00000000	0.99853960
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "query_stop": 1,
     "smoothing": 3, "spud_mu": 800, "spud_bg": 1, "mu": 450, "jm_lambda": 0.5,
