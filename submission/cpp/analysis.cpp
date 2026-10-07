@@ -1,5 +1,6 @@
 #include "analysis.h"
 
+#include <cstring>
 #include <unordered_map>
 
 const std::unordered_set<std::string> STOPWORDS = {
