@@ -1,19 +1,13 @@
 # COL764 Assignment 2 – Aditya Anand
 
-This folder is my submission: a query-likelihood reranker (Track A) and
-relevance-model feedback (RM1, RM2, RM3) for Tracks B and C. Everything is
-written from scratch. The scoring code is a small C++ engine in `cpp/`, and
-`feedback.py` loads it with `ctypes`. Only the Python standard library and the
-C++ standard library are used, so it runs offline. The engine compiles itself
-on first import into `submission/_build/`; you need g++ or clang++, and nothing
+This folder is my submission: a QL reranker (Track A) and
+relevance-model feedback (RM1, RM2, RM3) for Tracks B and C.The scoring code is a small C++ engine in `cpp/`, and`feedback.py` loads it with `ctypes`. Only the Python standard library and the C++ standard library are used, so it runs offline. The engine compiles itself on first import into `submission/_build/`; you need g++ or clang++, and nothing
 has to be installed.
 
 ## What is implemented
 
 - **Unigram query likelihood** (`score_candidates`) with three smoothing
-  choices: Dirichlet, Jelinek-Mercer and SPUD (the Pólya-urn document model,
-  still query likelihood). The smoothing parameter is tunable. Only the given
-  candidate pool is scored and returned.
+  choices: Dirichlet, Jelinek-Mercer and SPUD. The smoothing parameter is tunable. Only the given candidate pool is scored and returned.
 - **RM1**: P(w|R) = Σ_D P(w|D) P(D|Q) over the pseudo-relevant documents, with
   P(D|Q) ∝ P(Q|D).
 - **RM2**: Lavrenko and Croft's conditional-sampling estimate,
