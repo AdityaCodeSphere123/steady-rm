@@ -24,8 +24,11 @@ copy_tree() {
   fi
 }
 
-# Required entrypoint + C++ engine + optional bonus set
+# Required entrypoint + C++ engine + README + optional bonus set
 copy_tree submission
+# Hand-check demo referenced from submission/README.md
+copy_tree tools/__init__.py
+copy_tree tools/verify_rm.py
 
 # Starter repo the grader expects (same layout as GitHub)
 copy_tree harness
@@ -41,16 +44,18 @@ copy_tree .gitignore
 copy_tree .github
 
 # Do not ship: data/full and other corpora, .venv, .git, _build, *.so,
-# tools/, tune logs, assignment PDF/tex, NOTES, runs/
+# the tuning scripts in tools/, tune logs, assignment PDF/tex, NOTES, runs/
 
 rm -f "$STAGE/scripts/pack_submission.sh"
-if [[ ! -f "$STAGE/submission/feedback.py" ]]; then
-  echo "error: submission/feedback.py missing" >&2
-  exit 1
-fi
+for f in submission/feedback.py submission/README.md; do
+  if [[ ! -f "$STAGE/$f" ]]; then
+    echo "error: $f missing" >&2
+    exit 1
+  fi
+done
 
 rm -f "$OUT"
 ( cd "$STAGE" && zip -r -q "$OUT" . )
 echo "Wrote $OUT ($(du -h "$OUT" | awk '{print $1}'))"
-unzip -l "$OUT" | grep -E 'submission/(feedback\.py|adversarial_set\.json|cpp/rm_engine\.cpp)' 
+unzip -l "$OUT" | grep -E 'submission/(feedback\.py|README\.md|adversarial_set\.json|cpp/rm_engine\.cpp)|tools/verify_rm\.py' 
 echo "files: $(unzip -l "$OUT" | tail -1)"
