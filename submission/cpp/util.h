@@ -1,5 +1,3 @@
-// Small building blocks for rm_engine: string->id hash table, a fixed
-// 4-thread pool, and a JSONL field reader. No external dependencies.
 #pragma once
 
 #include <atomic>
@@ -15,19 +13,15 @@
 
 namespace rm {
 
-// Grading VM has 4 cores. Never run more than this many threads.
 constexpr int MAX_THREADS = 4;
 
 inline uint64_t hash_str(std::string_view s) {
-    // FNV-1a with a final avalanche (splitmix64). Keys are short words.
     uint64_t h = 1469598103934665603ull;
     for (unsigned char c : s) { h ^= c; h *= 1099511628211ull; }
     h ^= h >> 31; h *= 0x7fb5d329728ea185ull; h ^= h >> 27;
     return h;
 }
 
-// Open-addressing string -> dense id table. Ids are assigned 0,1,2,... in
-// insertion order; the key bytes live in one arena.
 class StrTable {
 public:
     static constexpr uint32_t NONE = 0xFFFFFFFFu;
@@ -53,7 +47,6 @@ public:
         }
     }
 
-    // Returns the id; `inserted` tells whether it was new.
     uint32_t insert(std::string_view s, bool* inserted = nullptr) {
         return insert_h(s, hash_str(s), inserted);
     }
@@ -105,10 +98,6 @@ private:
     size_t mask_ = 0;
 };
 
-// Persistent pool: W-1 worker threads plus the calling thread (worker 0).
-// run(n, fn) calls fn(task, worker) for task in [0, n), dynamically
-// scheduled. Spawning threads per call would cost more than a typical
-// 100-document rerank, so threads are created once.
 class ThreadPool {
 public:
     explicit ThreadPool(int w) : W_(w < 1 ? 1 : (w > MAX_THREADS ? MAX_THREADS : w)) {
@@ -124,7 +113,7 @@ public:
     void run(size_t n, const std::function<void(size_t, int)>& fn) {
         if (n == 0) return;
         if (W_ == 1 || n == 1) { for (size_t i = 0; i < n; ++i) fn(i, 0); return; }
-        std::lock_guard<std::mutex> job_guard(job_m_);  // one job at a time
+        std::lock_guard<std::mutex> job_guard(job_m_);
         {
             std::lock_guard<std::mutex> g(m_);
             fn_ = &fn; n_ = n; next_.store(0); pending_ = W_ - 1; ++gen_;
@@ -173,12 +162,6 @@ private:
     bool stop_ = false;
 };
 
-// ---------------------------------------------------------------------------
-// JSONL: read top-level string fields "doc_id" and "text" from one line.
-// Handles any key order, all JSON escapes (\uXXXX incl. surrogate pairs ->
-// UTF-8), and a numeric doc_id. Values of other keys are skipped.
-// ---------------------------------------------------------------------------
-
 inline void put_utf8(std::string& out, uint32_t cp) {
     if (cp < 0x80) out += static_cast<char>(cp);
     else if (cp < 0x800) { out += static_cast<char>(0xC0 | (cp >> 6)); out += static_cast<char>(0x80 | (cp & 0x3F)); }
@@ -198,10 +181,6 @@ inline int hexv(char c) {
     return -1;
 }
 
-// p points just after an opening quote. On return p is just after the
-// closing quote. If the string has no escapes, `view` aliases the input
-// and `buf` is untouched; otherwise the decoded bytes are in buf and view
-// points into it.
 inline bool json_string(const char*& p, const char* end, std::string& buf, std::string_view& view) {
     const char* s = p;
     while (p < end && *p != '"' && *p != '\\') ++p;
@@ -233,7 +212,7 @@ inline bool json_string(const char*& p, const char* end, std::string& buf, std::
                 put_utf8(buf, cp);
                 break;
             }
-            default: buf += e; break;  // \" \\ \/
+            default: buf += e; break;
         }
     }
     return false;
@@ -243,7 +222,6 @@ inline void skip_ws(const char*& p, const char* end) {
     while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) ++p;
 }
 
-// Skip any JSON value (used for keys we do not care about).
 inline bool json_skip(const char*& p, const char* end) {
     skip_ws(p, end);
     if (p >= end) return false;
@@ -263,7 +241,7 @@ inline bool json_skip(const char*& p, const char* end) {
         }
         return false;
     }
-    while (p < end && *p != ',' && *p != '}') ++p;  // number / true / false / null
+    while (p < end && *p != ',' && *p != '}') ++p;
     return true;
 }
 

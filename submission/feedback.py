@@ -69,8 +69,6 @@ def _digest(flags: Sequence[str]) -> str:
 
 
 def _compile(out: str, flags: Sequence[str]) -> bool:
-    """Compile the translation units in parallel, then link. The library is
-    renamed into place atomically."""
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cxx = os.environ.get("CXX", "g++")
     tag = f"{os.getpid()}"
@@ -85,11 +83,10 @@ def _compile(out: str, flags: Sequence[str]) -> bool:
         ok = all(p.wait(timeout=300) == 0 for p in procs)
         tmp = f"{out}.{tag}.tmp"
         if ok:
-            r = subprocess.run([cxx, *flags, *objs, "-o", tmp], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.PIPE, timeout=300)
+            r = subprocess.run([cxx, *flags, *objs, "-o", tmp], stdout=subprocess.DEVNULL,stderr=subprocess.PIPE, timeout=300)
             ok = r.returncode == 0 and os.path.exists(tmp)
         if ok:
-            os.replace(tmp, out)  # a concurrent importer never sees half a file
+            os.replace(tmp, out)
         return ok
     except (OSError, subprocess.SubprocessError):
         return False
@@ -123,7 +120,7 @@ def _declare(lib) -> None:
 
 def _load_native():
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
-    extra = os.environ.get("RM_EXTRA_FLAGS", "").split()  # dev only, e.g. sanitizers
+    extra = os.environ.get("RM_EXTRA_FLAGS", "").split()
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
         try:
             digest = _digest(flags)
@@ -142,16 +139,11 @@ def _load_native():
     return None
 
 
-# ---------------------------------------------------------------------------
-# Helpers (not part of the graded interface)
-# ---------------------------------------------------------------------------
-
 def backend() -> str:
     return "cpp"
 
 
 def set_params(**kw: float) -> None:
-    """Override engine parameters by name."""
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
@@ -191,7 +183,6 @@ _active: Dict[str, float] = {}
 
 
 def use_model(model: str = "competition", rm=3, lam: Optional[float] = None, **overrides: float) -> None:
-    """Select the model the graded entrypoints use (see the module docstring)."""
     global _active
     _active = _config(model, rm, lam, **overrides)
     set_params(**_active)
@@ -208,7 +199,6 @@ def _using(cfg: Dict[str, float]):
 
 def rerank(query: str, candidate_doc_ids: List[str], k: int = 10, model: str = "competition",
            **overrides: float) -> List[Tuple[str, float]]:
-    """Query-likelihood reranking with the given model."""
     with _using(_config(model, **overrides)):
         return score_candidates(query, candidate_doc_ids, k)
 
@@ -216,14 +206,12 @@ def rerank(query: str, candidate_doc_ids: List[str], k: int = 10, model: str = "
 def rm_feedback(query: str, pseudo_relevant_doc_ids: List[str], candidate_doc_ids: List[str], k: int = 10,
                 model: str = "competition", rm=3, lam: Optional[float] = None,
                 **overrides: float) -> List[Tuple[str, float]]:
-    """Relevance-model reranking with the given model and RM1/RM2/RM3."""
     with _using(_config(model, rm, lam, **overrides)):
         return relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
 
 
 def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int = 1,
                     model: Optional[str] = None, **overrides: float) -> List[Tuple[str, float]]:
-    """The estimated P(w|R) alone: variant 1 = RM1, 2 = RM2. model None keeps the current parameters."""
     s, ns = _join(pseudo_relevant_doc_ids)
     if model is None and not overrides:
         return [tuple(x) for x in _json_call(_lib.rm_relevance_model, query.encode(), s, ns, int(variant))]
@@ -231,13 +219,7 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
         return relevance_model(query, pseudo_relevant_doc_ids, variant)
 
 
-# ---------------------------------------------------------------------------
-# Required entrypoints
-# ---------------------------------------------------------------------------
-
 def prepare(corpus_path: str) -> None:
-    """One pass over the corpus: tokenise and build the collection model.
-    Idempotent for the same path."""
     if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
         raise RuntimeError(_lib.rm_last_error().decode())
 
@@ -256,15 +238,11 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
-    """Rerank candidate_doc_ids with the query-likelihood model (Track A)."""
     return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
                              candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
-    """Rerank candidate_doc_ids with a relevance model estimated from
-    pseudo_relevant_doc_ids (Tracks B/C). The seed only feeds estimation;
-    output is drawn from candidate_doc_ids only."""
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     return _run(_lib.rm_feedback, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), s, ns)
 

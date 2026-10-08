@@ -278,7 +278,6 @@ public:
 };
 
 thread_local PorterStemmer g_porter;
-// One cache per mode: the stemmer can change between prepare() calls.
 thread_local std::unordered_map<std::string, std::string> g_stem_cache[2];
 
 const std::string& apply_stem(const std::string& w, uint8_t stemmer) {

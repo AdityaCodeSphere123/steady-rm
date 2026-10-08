@@ -16,9 +16,6 @@
 
 namespace rm {
 
-// ---------------------------------------------------------------------------
-// Parameters by name
-// ---------------------------------------------------------------------------
 #define RM_PARAMS(X) \
     X(stemmer) X(query_stop) X(smoothing) X(mu) X(jm_lambda) X(spud_mu) X(spud_bg) \
     X(w_od) X(w_uw) X(uw_window) X(lead_w) X(lead_len) X(lead_mu) \
@@ -32,13 +29,8 @@ bool set_param(Params& p, const std::string& n, double v) {
     return false;
 }
 
-// Candidate scoring runs on the thread pool above this many pool tokens.
 constexpr uint64_t PAR_MIN_TOKENS = 250000;
 
-// ---------------------------------------------------------------------------
-// Tokeniser: lowercase ASCII alnum runs, dotted initials glued (u.s. -> us),
-// other length-1 tokens dropped. Used identically for documents and queries.
-// ---------------------------------------------------------------------------
 static uint8_t T_ALNUM[256], T_LOWER[256];
 static const bool T_INIT = [] {
     for (int i = 0; i < 256; ++i) {
@@ -70,7 +62,7 @@ static void each_surface(std::string_view text, Fn&& emit) {
         const unsigned char c = static_cast<unsigned char>(ch);
         if (T_ALNUM[c]) {
             if (tn < sizeof(tok)) tok[tn++] = static_cast<char>(T_LOWER[c]);
-            else overflow = true;  // absurdly long run: truncated
+            else overflow = true;
         } else {
             take();
             if (c != '.') flush_acro();
@@ -80,21 +72,18 @@ static void each_surface(std::string_view text, Fn&& emit) {
     flush_acro();
 }
 
-// ---------------------------------------------------------------------------
-// Per-call state
-// ---------------------------------------------------------------------------
 struct Engine::Scratch {
-    std::vector<uint32_t> cnt;      // per-term counter, all zero between uses
+    std::vector<uint32_t> cnt;
     std::vector<uint32_t> touched;
-    std::vector<std::pair<uint32_t, uint16_t>> hits;  // (position, query slot)
+    std::vector<std::pair<uint32_t, uint16_t>> hits;
     explicit Scratch(size_t V) : cnt(V, 0) {}
 };
 
 struct Engine::Query {
-    std::vector<uint32_t> terms;            // tids, with duplicates (in-vocab only)
-    std::vector<uint32_t> uniq, uniq_cnt;   // distinct tids and multiplicity
-    std::vector<std::pair<uint16_t, uint16_t>> pairs;  // adjacent (slot a, slot b)
-    std::vector<std::pair<uint64_t, uint64_t>> pair_cf;  // (cf ordered, cf unordered)
+    std::vector<uint32_t> terms;
+    std::vector<uint32_t> uniq, uniq_cnt;
+    std::vector<std::pair<uint16_t, uint16_t>> pairs;
+    std::vector<std::pair<uint64_t, uint64_t>> pair_cf;
     size_t len() const { return terms.size(); }
 };
 
@@ -106,18 +95,15 @@ Engine::Engine() {
 }
 Engine::~Engine() = default;
 
-// ---------------------------------------------------------------------------
-// prepare(): one parallel pass over the corpus
-// ---------------------------------------------------------------------------
 namespace {
 struct Shard {
-    StrTable surf{1 << 14};                 // surface form -> local term
+    StrTable surf{1 << 14};
     std::vector<uint32_t> surf_to_local;
-    StrTable local{1 << 14};                // stem -> local term id
+    StrTable local{1 << 14};
     std::vector<uint64_t> cf;
     std::vector<uint32_t> df, stamp;
     std::vector<uint32_t> toks;
-    std::vector<uint64_t> doc_end;          // cumulative token count per doc
+    std::vector<uint64_t> doc_end;
     std::vector<std::string> ids;
 };
 }  // namespace
@@ -127,7 +113,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     std::string path = path_in;
     struct stat st{};
     if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) path += "/corpus.jsonl";
-    if (ready_ && path == path_ && P.stemmer == stemmer_used_) return true;  // idempotent
+    if (ready_ && path == path_ && P.stemmer == stemmer_used_) return true;
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) { err = "cannot open " + path; return false; }
@@ -144,8 +130,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     close(fd);
 
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
-    // Chunk count depends on the file only, never on the thread count, so
-    // term ids (and every tie-break) do not depend on how many threads ran.
+    // From the file size, not the thread count: term ids must not depend on how many threads run.
     const size_t n_chunks = size == 0 ? 0 : std::min<size_t>(256, std::max<size_t>(16, size >> 22));
     std::vector<size_t> cut(n_chunks + 1, 0);
     for (size_t c = 1; c < n_chunks; ++c) {
@@ -191,15 +176,12 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
             sh.doc_end.push_back(sh.toks.size());
             sh.ids.emplace_back(doc.id);
         }
-        // The surface-form cache is only needed while tokenising; free it now
-        // so peak memory is not (number of chunks) x (chunk vocabulary).
         sh.surf = StrTable(16);
         std::vector<uint32_t>().swap(sh.surf_to_local);
         std::vector<uint32_t>().swap(sh.stamp);
     });
     if (map) munmap(map, size);
 
-    // Merge local vocabularies into the global one (deterministic order).
     vocab_ = StrTable(1 << 16);
     cf_.clear(); df_.clear();
     std::vector<std::vector<uint32_t>> remap(n_chunks);
@@ -239,14 +221,13 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
         for (size_t d = 0; d < shards[c].ids.size(); ++d) {
             bool ins = false;
             docids_.insert(shards[c].ids[d], &ins);
-            if (ins) docid_to_doc_.push_back(static_cast<int32_t>(doc_base[c] + d));  // first wins
+            if (ins) docid_to_doc_.push_back(static_cast<int32_t>(doc_base[c] + d));
         }
     }
     shards.clear();
     total_ = T;
     avgdl_ = N ? static_cast<double>(T) / N : 0.0;
 
-    // Expansion-term stoplist, on stemmed forms.
     std::unordered_set<std::string> stops;
     for (const auto& w : STOPWORDS) { stops.insert(w); stops.insert(apply_stem(w, stemmer)); }
     stop_.assign(vocab_.size(), 0);
@@ -299,21 +280,18 @@ int32_t Engine::doc_index(std::string_view id) const {
     return i == StrTable::NONE ? -1 : docid_to_doc_[i];
 }
 
-// ---------------------------------------------------------------------------
-// Query analysis
-// ---------------------------------------------------------------------------
 Engine::Query Engine::parse_query(std::string_view qtext) {
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
     std::vector<std::string> surf;
     each_surface(qtext, [&](std::string_view s) { surf.emplace_back(s); });
     std::vector<std::string> kept;
     if (P.query_stop > 0) for (auto& s : surf) if (!INDEX_STOPWORDS.count(s)) kept.push_back(s);
-    if (kept.empty()) kept = surf;   // all-stopword query: keep everything
+    if (kept.empty()) kept = surf;
     Query q;
-    int prev = -1;  // slot of previous in-vocab term; OOV breaks adjacency
+    int prev = -1;
     for (auto& s : kept) {
         uint32_t t = vocab_.find(apply_stem(s, stemmer));
-        if (t == StrTable::NONE) { prev = -1; continue; }  // OOV: constant for every doc
+        if (t == StrTable::NONE) { prev = -1; continue; }
         auto it = std::find(q.uniq.begin(), q.uniq.end(), t);
         uint16_t slot;
         if (it == q.uniq.end()) { slot = static_cast<uint16_t>(q.uniq.size()); q.uniq.push_back(t); q.uniq_cnt.push_back(0); }
@@ -328,8 +306,6 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
     return q;
 }
 
-// Marks the query's terms in the dense qmark_ array (term -> slot) for the
-// lifetime of one call, so doc_features() classifies each token in O(1).
 struct Engine::Marks {
     Engine& e; const Query& q;
     Marks(Engine& en, const Query& qq) : e(en), q(qq) {
@@ -338,13 +314,6 @@ struct Engine::Marks {
     ~Marks() { for (uint32_t t : q.uniq) e.qmark_[t] = 0xFFFF; }
 };
 
-// ---------------------------------------------------------------------------
-// Proximity counting. hits are (position, slot), sorted by position.
-//   ordered   #1(a b): a at i and b at i+1
-//   unordered #uwW(a b): an a-occurrence with a b within distance < W
-// The same function counts documents and (summed) the whole collection, so
-// document and background statistics are defined identically.
-// ---------------------------------------------------------------------------
 static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
                         const std::vector<std::pair<uint16_t, uint16_t>>& pairs, uint32_t W,
                         uint64_t* od, uint64_t* uw) {
@@ -365,15 +334,12 @@ static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
     }
 }
 
-// Document lists per term (doc ids only), built in parallel: every
-// (term, doc) pair is written once through a per-term atomic cursor. Lists
-// are not sorted, which is fine: they are only ever summed over.
 void Engine::build_postings() {
     post_off_.clear(); post_.clear();
     const size_t V = vocab_.size(), N = n_docs();
     uint64_t total = 0;
     for (uint32_t d : df_) total += d;
-    if (V == 0 || total > (1ull << 28)) return;     // > 1 GB: fall back to corpus scans
+    if (V == 0 || total > (1ull << 28)) return;
     post_off_.assign(V + 1, 0);
     for (size_t t = 0; t < V; ++t) post_off_[t + 1] = post_off_[t] + df_[t];
     post_.assign(total, 0);
@@ -396,10 +362,6 @@ void Engine::build_postings() {
     });
 }
 
-// Collection counts of #1(a b) and #uwW(a b) for the query's adjacent pairs.
-// Only documents containing the rarer term of a pair can contribute, so each
-// pair walks that term's document list (split into parallel tasks). Cached
-// by term pair: pure collection statistics.
 void Engine::ensure_pair_stats(Query& q) {
     if (q.pairs.empty() || (P.w_od <= 0 && P.w_uw <= 0)) return;
     const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
@@ -417,8 +379,6 @@ void Engine::ensure_pair_stats(Query& q) {
     if (missing.empty()) return;
     const size_t N = n_docs();
     const bool have_post = !post_off_.empty();
-    // Task = (pair index, first doc slot, last doc slot) over the rarer term's
-    // list, or over the whole corpus when there is no inverted list.
     struct Task { size_t m; uint64_t b, e; };
     std::vector<Task> tasks;
     const uint64_t step = 4096;
@@ -458,9 +418,6 @@ void Engine::ensure_pair_stats(Query& q) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Smoothed document language model
-// ---------------------------------------------------------------------------
 double Engine::pbg(uint32_t t) const {
     if (P.smoothing >= 3 && P.spud_bg > 0 && df_total_ > 0) return df_[t] / df_total_;
     return static_cast<double>(cf_[t]) / static_cast<double>(total_);
@@ -480,7 +437,6 @@ double Engine::log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const {
     const double mu = P.mu;
     const double dir = (static_cast<double>(tf) + mu * pc) / (static_cast<double>(dlen) + mu);
     if (P.smoothing >= 2) {
-        // Two-stage: (1-λ) Dirichlet + λ P(w|C). Not the same as JM (smoothing=1).
         const double l = std::min(0.95, std::max(0.0, P.jm_lambda));
         return std::log(std::max(1e-18, (1.0 - l) * dir + l * pc));
     }
@@ -497,7 +453,7 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     const size_t U = q.uniq.size();
     std::vector<uint32_t> tfv(2 * U, 0);
     uint32_t* tf = tfv.data();
-    uint32_t* tfl = tf + U;   // occurrences inside the lead window
+    uint32_t* tfl = tf + U;
     const uint32_t lead_len = static_cast<uint32_t>(std::max(0.0, P.lead_len));
     uint32_t dlen = 0;
     s.hits.clear();
@@ -505,7 +461,7 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         const uint32_t* t = toks_.data() + tok_off_[d];
         dlen = static_cast<uint32_t>(tok_off_[d + 1] - tok_off_[d]);
         for (uint32_t i = 0; i < dlen; ++i) {
-            const uint16_t u = qmark_[t[i]];     // query slot, or 0xFFFF
+            const uint16_t u = qmark_[t[i]];
             if (u == 0xFFFF) continue;
             ++tf[u];
             if (i < lead_len) ++tfl[u];
@@ -531,7 +487,6 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
         for (size_t p = 0; p < q.pairs.size(); ++p) {
             double pco = (q.pair_cf[p].first ? q.pair_cf[p].first : 0.5) / T;
             double pcu = (q.pair_cf[p].second ? q.pair_cf[p].second : 0.5) / T;
-            // SPUD needs distinct-term counts, which pairs do not have: they keep Dirichlet.
             if (P.smoothing >= 3) {
                 f.od += log_p_dir(static_cast<uint32_t>(od[p]), dlen, pco);
                 f.uw += log_p_dir(static_cast<uint32_t>(uw[p]), dlen, pcu);
@@ -544,17 +499,10 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     return f;
 }
 
-// Query part of the score. With sdm=false this is sum_q log P(q|D).
 double Engine::qpart(const DocFeat& f, bool sdm) const {
     return sdm ? f.uni + P.w_od * f.od + P.w_uw * f.uw : f.uni;
 }
 
-// Scores every doc in `docs`:
-//   model == nullptr:  qpart                                 [Track A]
-//   otherwise:         lam * qpart/|Q| + (1-lam) * sum_w M(w) log P(w|D)
-// The RM sum is split into a document-independent background term plus a
-// correction over the model terms the document actually contains, so a
-// document costs O(|D|) however many expansion terms there are.
 std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t>& docs,
                                        const Model* model, double lam, bool sdm) {
     const size_t n = docs.size();
@@ -565,13 +513,8 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     const bool two_stage = P.smoothing >= 2 && !spud;
     const double om = P.spud_mu;
     const double ts_l = std::min(0.95, std::max(0.0, P.jm_lambda));
-    std::vector<double>& mw = mw_;       // dense model weights, all zero between calls
+    std::vector<double>& mw = mw_;
     double msum = 0, base_const = 0;
-    // Background part, log P(w|D) of a term absent from D:
-    //   Dirichlet   log(mu pc) - log(|D| + mu)
-    //   JM          log(l pc)
-    //   two-stage   log(pc) + log((1-l) mu / (|D| + mu) + l)
-    //   SPUD        log(om pc) - log(|D_v| + om)
     if (model) {
         if (mw.size() != vocab_.size()) mw.assign(vocab_.size(), 0.0);
         for (auto& [t, w] : *model) {
@@ -621,8 +564,6 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     return out;
 }
 
-// sum_w P(w|R) log P(w|D) for each doc, term by term: the expansion score of
-// RM3 / the negative cross-entropy of RM1.
 std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs, const Model& model) const {
     std::unordered_map<uint32_t, uint32_t> slot;
     for (size_t j = 0; j < model.size(); ++j) slot.emplace(model[j].first, static_cast<uint32_t>(j));
@@ -648,9 +589,6 @@ std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs, const Mode
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Ranking helpers
-// ---------------------------------------------------------------------------
 std::vector<Ranked> Engine::top_k(const std::vector<double>& score, const std::vector<std::string_view>& ids,
                                   int k) const {
     const size_t n = score.size();
@@ -658,7 +596,7 @@ std::vector<Ranked> Engine::top_k(const std::vector<double>& score, const std::v
     for (size_t i = 0; i < n; ++i) order[i] = static_cast<int32_t>(i);
     auto cmp = [&](int32_t a, int32_t b) {
         if (score[a] != score[b]) return score[a] > score[b];
-        return ids[a] < ids[b];   // deterministic doc_id tie-break
+        return ids[a] < ids[b];
     };
     size_t kk = std::min<size_t>(n, k < 0 ? 0 : static_cast<size_t>(k));
     std::partial_sort(order.begin(), order.begin() + kk, order.end(), cmp);
@@ -673,9 +611,6 @@ std::vector<Ranked> Engine::pool_order(const std::vector<std::string_view>& ids,
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Track A
-// ---------------------------------------------------------------------------
 std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::vector<std::string_view>& cands, int k) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
@@ -687,9 +622,6 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
     return top_k(score_pool(q, docs, nullptr, 1.0, true), cands, k);
 }
 
-// ---------------------------------------------------------------------------
-// Relevance model
-// ---------------------------------------------------------------------------
 std::vector<std::pair<uint32_t, uint32_t>> Engine::bag(int32_t d, Scratch& s) const {
     std::vector<std::pair<uint32_t, uint32_t>> b;
     if (d < 0) return b;
@@ -702,9 +634,6 @@ std::vector<std::pair<uint32_t, uint32_t>> Engine::bag(int32_t d, Scratch& s) co
     return b;
 }
 
-// P(D|Q) over the seed: softmax(beta * mean_q log P(q|D)); beta < 0 gives
-// the exact RM1 weight P(Q|D) = exp(sum_q log P(q|D)). Unknown ids and
-// duplicates are skipped; the top fb_docs documents are kept.
 std::vector<Engine::Seed> Engine::seed_weights(const Query& q, const std::vector<std::string_view>& seeds, Scratch& s) {
     std::vector<Seed> out;
     std::unordered_set<int32_t> seen;
@@ -745,8 +674,6 @@ int Engine::support_needed(size_t n_seed) const {
     return std::max(1, static_cast<int>(std::ceil(P.support_frac * static_cast<double>(n_seed) - 1e-9)));
 }
 
-// Keeps the fb_terms best terms (plus `must`) and renormalises. Terms are
-// ranked by P(w|R) * idf^idf_power but keep their raw probability.
 Engine::Model Engine::finish_model(Model& m, const std::vector<uint32_t>& must) const {
     auto by_score = [](const auto& a, const auto& b) {
         return a.second != b.second ? a.second > b.second : a.first < b.first;
@@ -785,7 +712,6 @@ Engine::Model Engine::finish_model(Model& m, const std::vector<uint32_t>& must) 
     return m;
 }
 
-// RM1: P(w|R) = sum_D P(w|D) P(D|Q)
 Engine::Model Engine::est_rm1(const Query& q, const std::vector<Seed>& seed, Scratch& s) {
     std::unordered_map<uint32_t, std::pair<double, int>> acc;
     const double T = static_cast<double>(total_), fm = P.fb_mu;
@@ -818,9 +744,6 @@ Engine::Model Engine::est_rm1(const Query& q, const std::vector<Seed>& seed, Scr
     return finish_model(m, must);
 }
 
-// RM2 (Lavrenko & Croft 2001, conditional / i.i.d. sampling):
-//   P(w|R) ∝ P(w) prod_i sum_D P(q_i|D) P(D|w),  P(D|w) = P(w|D)P(D)/P(w)
-// with a uniform P(D) over the seed.
 Engine::Model Engine::est_rm2(const Query& q, const std::vector<Seed>& seed, Scratch& s) {
     const size_t S = seed.size(), Q = q.len();
     if (!S || !Q) return {};
@@ -893,32 +816,26 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Tracks B/C
-// ---------------------------------------------------------------------------
 std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                      const std::vector<std::string_view>& cands, int k) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
     if (q.terms.empty()) return pool_order(cands, k);
     const int rm = P.rm_model == 1 ? 1 : P.rm_model == 2 ? 2 : 3;
-    if (rm == 3 && P.lambda >= 1) return score_candidates(query, cands, k);   // Track B == Track A
+    if (rm == 3 && P.lambda >= 1) return score_candidates(query, cands, k);
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
     std::vector<int32_t> docs(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
     auto seed = seed_weights(q, seeds, s);
-    if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback
+    if (seed.empty()) return score_candidates(query, cands, k);
     auto model = rm == 2 ? est_rm2(q, seed, s) : est_rm1(q, seed, s);
     if (model.empty()) return score_candidates(query, cands, k);
     if (rm != 3) return top_k(rm_pool(docs, model), cands, k);
     const double lam = std::max(0.0, P.lambda);
 
     if (P.fb_mode >= 1) {
-        // RM3 on top of the Track A score: the query side is the whole
-        // score_candidates() score S_A, the expansion side is centred over
-        // the pool and divided by fb_scale to put it on S_A's scale.
         std::vector<double> sa = score_pool(q, docs, nullptr, 1.0, true);
         std::vector<double> r = rm_pool(docs, model);
         if (r.size() > 1) {
@@ -931,7 +848,6 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
         for (size_t i = 0; i < sa.size(); ++i) sa[i] = (1.0 - wl) * sa[i] + wl * r[i];
         return top_k(sa, cands, k);
     }
-    // RM3 inside the language model: lambda * P(Q|D)/|Q| + (1-lambda) * sum_w P(w|R) log P(w|D).
     return top_k(score_pool(q, docs, &model, lam, P.fb_sdm > 0), cands, k);
 }
 

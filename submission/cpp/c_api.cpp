@@ -1,6 +1,3 @@
-// Flat C interface for ctypes. Doc-id lists cross the boundary as one
-// '\n'-joined byte string; results come back as indices into the caller's
-// candidate list plus scores, so no strings are returned for rankings.
 #include "rm_engine.h"
 
 #include <cstring>
@@ -9,7 +6,7 @@
 
 namespace {
 rm::Engine* g_engine = nullptr;
-std::mutex g_m;               // calls are serialised; ctypes drops the GIL
+std::mutex g_m;
 std::string g_err;
 
 rm::Engine& eng() { if (!g_engine) g_engine = new rm::Engine(); return *g_engine; }
@@ -80,7 +77,6 @@ int rm_feedback(const char* query, const char* seeds, int ns, const char* cands,
     catch (const std::exception& e) { g_err = e.what(); return -1; }
 }
 
-// The estimated relevance model alone: variant 1 = RM1, 2 = RM2.
 int rm_relevance_model(const char* query, const char* seeds, int ns, int variant, char* buf, int len) {
     std::lock_guard<std::mutex> g(g_m);
     auto m = eng().relevance_model(query, split(seeds, ns), variant);
