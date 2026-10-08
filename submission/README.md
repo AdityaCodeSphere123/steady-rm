@@ -172,6 +172,33 @@ feedback.
 |---|---|---|---|---|
 | 0.53809 | 0.46063 | 0.53814 | 1.00000 | 0.99854 |
 
+## Adversarial set (bonus)
+
+`adversarial_set.json` has five dev queries (48, 44, 29, 22 and 41). Each one
+comes with one to nine documents from that query's own candidate pool. None of
+these documents is relevant: they are judged non-relevant or unjudged. Every
+one of them also scores high on query likelihood, so it looks like a perfectly
+good seed. When a feedback function trusts them, its relevance model pulls
+exactly those documents into the top 10.
+
+I built the lists with `tools/make_adversarial.py`, which adds documents
+greedily, strongest first. At each step it picks the document that causes the
+largest average nDCG@10 drop over a panel of 20 simulated defenders:
+
+- 10 feedback setups:
+  - my own model, with RM3 and with RM1;
+  - the tuned Dirichlet and JM baselines;
+  - typical untuned RM1, RM2 and RM3 setups;
+  - RM3 with uniform P(D);
+  - a cautious λ = 0.7 setup.
+- Each setup is run twice, once with Porter stemming and stopword removal and
+  once with raw tokens, because other teams tokenise differently.
+
+The simulated drop averages 0.65 over these 20 defenders. On five setups that
+weren't used in the search it is 0.64, against 0.42 for my earlier set. My own
+submitted model loses nothing to it: the seed coverage filter and λ = 0.9
+absorb the attack.
+
 ## Files
 
 - `feedback.py`: entry points, the `MODELS` table, and the build and loading
