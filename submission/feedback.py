@@ -1,62 +1,17 @@
 """COL764 Assignment 2: query-likelihood reranking and relevance-model feedback.
 
-Graded entrypoints (the harness calls only these three):
-    prepare(corpus_path)
-    score_candidates(query, candidate_doc_ids, k=10)                  Track A
-    relevance_model_feedback(query, pseudo_relevant_doc_ids,
-                             candidate_doc_ids, k=10)                 Tracks B/C
-They use the active model, which is the submitted one (MODELS["competition"]
-with RM3) unless use_model() or the FEEDBACK_* environment variables below
-select another.
+score_candidates() reranks a candidate pool by unigram query likelihood
+(Track A); relevance_model_feedback() estimates a relevance model (RM1, RM2
+or RM3) from the pseudo-relevant documents and reranks the pool with it
+(Tracks B and C). By default both run the submitted model,
+MODELS["competition"] with RM3. The plain Dirichlet / Jelinek-Mercer
+baselines and RM1/RM2 can be selected with use_model(), rerank(),
+rm_feedback() or the FEEDBACK_MODEL / FEEDBACK_RM / FEEDBACK_LAMBDA
+environment variables; see README.md for how to call each combination and
+the results.
 
-Models (complete parameter sets in MODELS; all share one prepare()):
-  competition  Submitted. Track A: SPUD (Polya urn) unigram query likelihood
-               (spud_mu 800, df background) mixed with a lead-field model of
-               the first 20 tokens (weight 0.1, Dirichlet 60), plus sequential
-               dependence (ordered 0.05, unordered window 9 weight 0.1, both
-               Dirichlet 450). RM3: 0.9 * S_A(D) + 0.1 * (E(D) - mean E) / 12,
-               S_A the score_candidates() score, E(D) = sum_w P(w|R) log P(w|D);
-               P(w|R) from the top 5 seed docs covering >= 1/4 of the query,
-               P(D|Q) sharpened by beta 40, 80 terms.
-  dirichlet    Required baseline: multinomial unigram query likelihood with
-               Dirichlet smoothing (mu 360), no SPUD, lead field or proximity.
-               RM3: 0.45 * log P(Q|D)/|Q| + 0.55 * sum_w P(w|R) log P(w|D), with
-               RM1 over the top 2 seed docs, exact P(D|Q) = P(Q|D), 30 terms.
-  jm           Same with Jelinek-Mercer smoothing (lambda 0.35); RM3 with
-               lambda 0.3, top 7 seed docs, 100 terms.
-               Both baselines are tuned for nDCG@10 on data/full.
-
-Relevance models (rm=):
-  1  RM1  rerank by sum_w P_RM1(w|R) log P(w|D)   (no query side)
-  2  RM2  the same with the RM2 estimate of P(w|R)
-  3  RM3  RM1 interpolated with the query, weight lambda on the query
-          (lambda 1 returns exactly score_candidates())
-
-Calling any combination (after fb.prepare("data/full/corpus.jsonl")):
-  from submission import feedback as fb
-  fb.rerank(q, pool, 10)                               competition query likelihood
-  fb.rerank(q, pool, 10, model="dirichlet")            plain Dirichlet QL
-  fb.rm_feedback(q, seed, pool, 10)                    competition + RM3 (= graded)
-  fb.rm_feedback(q, seed, pool, 10, rm=1)              competition + RM1
-  fb.rm_feedback(q, seed, pool, 10, rm=2)              competition + RM2
-  fb.rm_feedback(q, seed, pool, 10, model="dirichlet", rm=1)   Dirichlet QL + RM1
-  fb.rm_feedback(q, seed, pool, 10, model="dirichlet", rm=2)   Dirichlet QL + RM2
-  fb.rm_feedback(q, seed, pool, 10, model="dirichlet", rm=3)   Dirichlet QL + RM3
-  fb.rm_feedback(q, seed, pool, 10, model="jm", rm=3, lam=0.7) JM QL + RM3, lambda 0.7
-  fb.relevance_model(q, seed, variant=2, model="dirichlet")    P(w|R) itself, [(term, p)]
-  fb.use_model("dirichlet", rm=1)   graded functions now run Dirichlet QL + RM1
-  fb.use_model()                    back to the submitted model
-Any engine parameter can be overridden in these calls, e.g. mu=1000.
-
-Running the harness on another combination (unset = submitted model):
-  FEEDBACK_MODEL=dirichlet FEEDBACK_RM=3 FEEDBACK_LAMBDA=0.5 \
-      python -m harness.run_harness --corpus ... --queries ... --qrels ... --candidates ...
-
-Implementation: the C++ engine in submission/cpp (maths in rm_engine.cpp,
-every parameter documented in rm_engine.h), loaded with ctypes and compiled
-from source on first import into submission/_build/ (or the temp dir if that
-is read-only). The library name carries a hash of the sources and flags, so
-edited sources are always rebuilt. RM_THREADS=n caps the threads (at most 4).
+The scoring is done by the C++ engine in cpp/, compiled from source on first
+import and loaded with ctypes.
 """
 import ctypes
 import hashlib
@@ -96,10 +51,8 @@ _BASELINE = {
 
 MODELS: Dict[str, Dict[str, float]] = {
     "competition": PARAMS,
-    "dirichlet": {**PARAMS, **_BASELINE, "smoothing": 0, "mu": 360,
-                  "lambda": 0.45, "fb_docs": 2, "fb_terms": 30},
-    "jm": {**PARAMS, **_BASELINE, "smoothing": 1, "jm_lambda": 0.35,
-           "lambda": 0.3, "fb_docs": 7, "fb_terms": 100},
+    "dirichlet": {**PARAMS, **_BASELINE, "smoothing": 0, "mu": 360,"lambda": 0.45, "fb_docs": 2, "fb_terms": 30},
+    "jm": {**PARAMS, **_BASELINE, "smoothing": 1, "jm_lambda": 0.35,"lambda": 0.3, "fb_docs": 7, "fb_terms": 100},
 }
 _RM = {"rm1": 1, "rm2": 2, "rm3": 3, 1: 1, 2: 2, 3: 3}
 
