@@ -174,7 +174,7 @@ feedback.
 
 ## Adversarial set (bonus)
 
-`adversarial_set.json` has five dev queries (48, 44, 29, 22 and 41). Each one
+`adversarial_set.json` has five dev queries (48, 29, 44, 25 and 22). Each one
 comes with one to nine documents from that query's own candidate pool. None of
 these documents is relevant: they are judged non-relevant or unjudged. Every
 one of them also scores high on query likelihood, so it looks like a perfectly
@@ -182,7 +182,8 @@ good seed. When a feedback function trusts them, its relevance model pulls
 exactly those documents into the top 10.
 
 I built the lists with `tools/make_adversarial.py`, which adds documents
-greedily, strongest first. At each step it picks the document that causes the
+greedily, strongest first, and then tries swapping or removing single
+documents while that helps. At each step it picks the document that causes the
 largest average nDCG@10 drop over a panel of 20 simulated defenders:
 
 - 10 feedback setups:
@@ -195,7 +196,9 @@ largest average nDCG@10 drop over a panel of 20 simulated defenders:
   once with raw tokens, because other teams tokenise differently.
 
 The simulated drop averages 0.65 over these 20 defenders. On five setups that
-weren't used in the search it is 0.64, against 0.42 for my earlier set. My own
+weren't used in the search it is 0.65, against 0.42 for my earlier set.
+The five queries are the ones with the largest drop averaged over both
+groups of defenders. My own
 submitted model loses nothing to it: the seed coverage filter and λ = 0.9
 absorb the attack.
 

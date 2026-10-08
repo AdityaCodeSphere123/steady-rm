@@ -86,6 +86,7 @@ def main():
     ap.add_argument("--pool-cands", type=int, default=40)
     ap.add_argument("--out", default="submission/adversarial_set.json")
     ap.add_argument("--eval", help="only score an existing adversarial set against the panel")
+    ap.add_argument("--refine", help="improve an existing adversarial set by swap/remove local search")
     a = ap.parse_args()
     corpus = find(a.root, ["corpus.jsonl"])
     queries = dict(read_queries(find(a.root, ["queries_dev.tsv", "queries*.tsv", "*.tsv"])))
@@ -129,6 +130,48 @@ def main():
         for name in DEFENDERS:
             print(f"  {name:12}" + "".join(f"{avg[(t, name)]:8.3f}" for t in TOKENISERS))
 
+    def candidates(text, pool, rel):
+        rank = {}
+        for key in panel():
+            e = use(key)
+            for i, (d, _) in enumerate(e.score_candidates(text, pool, len(pool))):
+                rank[d] = min(rank.get(d, i), i)
+        return sorted((d for d in pool if rel.get(d, 0) <= 0), key=rank.get)[: a.pool_cands]
+
+    def mean(dd):
+        return sum(dd.values()) / len(dd)
+
+    def refine(text, pool, rel, clean, seed, bad):
+        """Swap or drop single documents while that raises the mean drop."""
+        best_d = drops(text, pool, rel, clean, seed)
+        improved = True
+        while improved:
+            improved = False
+            moves = [seed[:i] + seed[i + 1:] for i in range(len(seed)) if len(seed) > 1]
+            moves += [seed[:i] + [d] + seed[i + 1:] for i in range(len(seed)) for d in bad if d not in seed]
+            for m in moves:
+                dd = drops(text, pool, rel, clean, m)
+                if mean(dd) > mean(best_d) + 1e-9:
+                    seed, best_d, improved = m, dd, True
+                    break
+        return seed, best_d
+
+    if a.refine:
+        out, rows = {}, []
+        for qid, seed in json.load(open(a.refine)).items():
+            text, pool, rel = queries[qid], pool_of(qid), qrels[qid]
+            clean = clean_scores(text, pool, rel)
+            before = mean(drops(text, pool, rel, clean, seed))
+            seed, dd = refine(text, pool, rel, clean, seed, candidates(text, pool, rel))
+            out[qid] = seed
+            rows.append((mean(dd), qid, seed, dd))
+            print(f"{qid}: mean drop {before:.3f} -> {mean(dd):.3f}  ({len(seed)} docs)", flush=True)
+        with open(a.out, "w") as f:
+            json.dump(out, f, indent=2)
+        report(rows, f"wrote {a.out}")
+        fb.use_model()
+        return
+
     if a.eval:
         rows = []
         for qid, seed in json.load(open(a.eval)).items():
@@ -146,12 +189,7 @@ def main():
         if not pool or not rel:
             continue
         clean = clean_scores(text, pool, rel)
-        rank = {}
-        for key in panel():
-            e = use(key)
-            for i, (d, _) in enumerate(e.score_candidates(text, pool, len(pool))):
-                rank[d] = min(rank.get(d, i), i)
-        bad = sorted((d for d in pool if rel.get(d, 0) <= 0), key=rank.get)[: a.pool_cands]
+        bad = candidates(text, pool, rel)
         if not bad:
             continue
 
