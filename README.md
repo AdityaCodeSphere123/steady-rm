@@ -42,8 +42,8 @@ selectable without editing code; the full list of calls is at the top of
 | `FEEDBACK_MODEL` | document model |
 |---|---|
 | `competition` (default) | SPUD query likelihood + lead field + proximity |
-| `dirichlet` | multinomial unigram QL, Dirichlet mu 500 |
-| `jm` | multinomial unigram QL, Jelinek-Mercer 0.3 |
+| `dirichlet` | multinomial unigram QL, Dirichlet mu 360; RM3 lambda 0.45, 2 docs, 30 terms |
+| `jm` | multinomial unigram QL, Jelinek-Mercer 0.35; RM3 lambda 0.3, 7 docs, 100 terms |
 
 `FEEDBACK_RM` = 1 (RM1), 2 (RM2) or 3 (RM3, default); `FEEDBACK_LAMBDA`
 overrides the RM3 query weight. Example, plain Dirichlet QL + RM1:

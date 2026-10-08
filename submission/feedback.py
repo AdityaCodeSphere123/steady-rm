@@ -19,10 +19,12 @@ Models (complete parameter sets in MODELS; all share one prepare()):
                P(w|R) from the top 5 seed docs covering >= 1/4 of the query,
                P(D|Q) sharpened by beta 40, 80 terms.
   dirichlet    Required baseline: multinomial unigram query likelihood with
-               Dirichlet smoothing (mu 500), no SPUD, lead field or proximity.
-               RM3: 0.5 * log P(Q|D)/|Q| + 0.5 * sum_w P(w|R) log P(w|D), with
-               RM1 over 10 seed docs, exact P(D|Q) = P(Q|D), 50 terms.
-  jm           Same as dirichlet with Jelinek-Mercer smoothing (lambda 0.3).
+               Dirichlet smoothing (mu 360), no SPUD, lead field or proximity.
+               RM3: 0.45 * log P(Q|D)/|Q| + 0.55 * sum_w P(w|R) log P(w|D), with
+               RM1 over the top 2 seed docs, exact P(D|Q) = P(Q|D), 30 terms.
+  jm           Same with Jelinek-Mercer smoothing (lambda 0.35); RM3 with
+               lambda 0.3, top 7 seed docs, 100 terms.
+               Both baselines are tuned for nDCG@10 on data/full.
 
 Relevance models (rm=):
   1  RM1  rerank by sum_w P_RM1(w|R) log P(w|D)   (no query side)
@@ -87,15 +89,17 @@ PARAMS: Dict[str, float] = {
 
 _BASELINE = {
     "w_od": 0, "w_uw": 0, "lead_w": 0,
-    "fb_mu": 0, "fb_docs": 10, "fb_terms": 50, "beta": -1,
+    "fb_mu": 0, "beta": -1,
     "support_frac": 0, "idf_power": 0, "fb_qterms": 0, "fb_cov": 0, "fb_anchor_exp": 0,
-    "lambda": 0.5, "fb_mode": 0, "fb_sdm": 0,
+    "fb_mode": 0, "fb_sdm": 0,
 }
 
 MODELS: Dict[str, Dict[str, float]] = {
     "competition": PARAMS,
-    "dirichlet": {**PARAMS, **_BASELINE, "smoothing": 0, "mu": 500},
-    "jm": {**PARAMS, **_BASELINE, "smoothing": 1, "jm_lambda": 0.3},
+    "dirichlet": {**PARAMS, **_BASELINE, "smoothing": 0, "mu": 360,
+                  "lambda": 0.45, "fb_docs": 2, "fb_terms": 30},
+    "jm": {**PARAMS, **_BASELINE, "smoothing": 1, "jm_lambda": 0.35,
+           "lambda": 0.3, "fb_docs": 7, "fb_terms": 100},
 }
 _RM = {"rm1": 1, "rm2": 2, "rm3": 3, 1: 1, 2: 2, 3: 3}
 
