@@ -20,7 +20,7 @@ DOCS = {
 }
 TEXTBOOK = dict(stemmer=0, query_stop=0, smoothing=0, mu=10, w_od=0, w_uw=0, lead_w=0,
                 fb_mu=0, fb_docs=100, fb_terms=1000, beta=-1, support_frac=0, idf_power=0,
-                fb_qterms=0, fb_cov=0, fb_anchor_exp=0, fb_mode=0, fb_sdm=0, tr_w=0)
+                fb_qterms=0, fb_cov=0, fb_anchor_exp=0, fb_mode=0, fb_sdm=0)
 MU = 10.0
 
 tf = {d: Counter(t.split()) for d, t in DOCS.items()}

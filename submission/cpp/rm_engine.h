@@ -38,11 +38,6 @@ struct Params {
     // unigram part: w_od = w_uw = 0 is plain query likelihood.
     double w_od = 0.0, w_uw = 0.0;
     double uw_window = 8;
-    // Translation model (Berger & Lafferty 1999) for query terms:
-    //   P_t(w|D) = (1-tr_w) P(w|D) + tr_w sum_v t(w|v) tf(v,D) / |D|
-    // t(w|v): the tr_k terms v (df >= tr_mindf, not stopwords) with the highest
-    // document co-occurrence cosine with w over the corpus, normalised.
-    double tr_w = 0, tr_k = 40, tr_mindf = 5;
     // Lead field: the first lead_len tokens form a second document model,
     //   P(q|D) = (1-lead_w) P_body(q|D) + lead_w P_lead(q|D)
     double lead_w = 0.0, lead_len = 12, lead_mu = 50;
@@ -101,7 +96,6 @@ private:
     Query parse_query(std::string_view q);
     int32_t doc_index(std::string_view id) const;
     void ensure_pair_stats(Query& q);
-    const std::vector<std::pair<uint32_t, double>>& translations(uint32_t w);
     double log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const;
     double log_p_dir(uint32_t tf, uint32_t dlen, double pc) const;
     double pbg(uint32_t t) const;   // P(w|C) of the active document model
@@ -155,13 +149,6 @@ private:
     std::mutex pair_m_;
     std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> pair_cf_;
     double pair_window_ = -1;
-
-    // Translation tables per (term, tr_k, tr_mindf), and the marks of the
-    // current query's translation sources v: trmark_[v] indexes trlist_.
-    std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, double>>> trans_;
-    std::vector<int32_t> trmark_;
-    std::vector<std::vector<std::pair<uint16_t, double>>> trlist_;
-    int marks_depth_ = 0;
 };
 
 }  // namespace rm

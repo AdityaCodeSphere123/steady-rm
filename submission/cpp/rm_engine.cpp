@@ -21,7 +21,7 @@ namespace rm {
 // ---------------------------------------------------------------------------
 #define RM_PARAMS(X) \
     X(stemmer) X(query_stop) X(smoothing) X(mu) X(jm_lambda) X(spud_mu) X(spud_bg) \
-    X(w_od) X(w_uw) X(uw_window) X(tr_w) X(tr_k) X(tr_mindf) X(lead_w) X(lead_len) X(lead_mu) \
+    X(w_od) X(w_uw) X(uw_window) X(lead_w) X(lead_len) X(lead_mu) \
     X(fb_mu) X(fb_docs) X(fb_terms) X(beta) X(support_frac) X(idf_power) X(fb_qterms) \
     X(fb_cov) X(fb_anchor_exp) X(lambda) X(fb_mode) X(fb_scale) X(fb_sdm)
 
@@ -259,8 +259,6 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     scratch_.clear();
     for (int w = 0; w < pool_->workers(); ++w) scratch_.emplace_back(new Scratch(vocab_.size()));
     pair_cf_.clear();
-    trans_.clear();
-    trmark_.clear();
     qmark_.assign(vocab_.size(), 0xFFFF);
     build_postings();
     {
@@ -334,29 +332,10 @@ Engine::Query Engine::parse_query(std::string_view qtext) {
 // lifetime of one call, so doc_features() classifies each token in O(1).
 struct Engine::Marks {
     Engine& e; const Query& q;
-    std::vector<uint32_t> tv;
     Marks(Engine& en, const Query& qq) : e(en), q(qq) {
         for (size_t u = 0; u < q.uniq.size(); ++u) e.qmark_[q.uniq[u]] = static_cast<uint16_t>(u);
-        if (e.marks_depth_++ > 0) return;   // nested call for the same query
-        e.trlist_.clear();
-        if (e.P.tr_w <= 0) return;
-        if (e.trmark_.size() != e.vocab_.size()) e.trmark_.assign(e.vocab_.size(), -1);
-        for (size_t u = 0; u < q.uniq.size(); ++u)
-            for (auto& [v, t] : e.translations(q.uniq[u])) {
-                if (e.trmark_[v] < 0) {
-                    e.trmark_[v] = static_cast<int32_t>(e.trlist_.size());
-                    e.trlist_.emplace_back();
-                    tv.push_back(v);
-                }
-                e.trlist_[e.trmark_[v]].push_back({static_cast<uint16_t>(u), t});
-            }
     }
-    ~Marks() {
-        for (uint32_t t : q.uniq) e.qmark_[t] = 0xFFFF;
-        if (--e.marks_depth_ > 0) return;
-        for (uint32_t v : tv) e.trmark_[v] = -1;
-        e.trlist_.clear();
-    }
+    ~Marks() { for (uint32_t t : q.uniq) e.qmark_[t] = 0xFFFF; }
 };
 
 // ---------------------------------------------------------------------------
@@ -479,45 +458,6 @@ void Engine::ensure_pair_stats(Query& q) {
     }
 }
 
-// t(w|v) for the translation model. Co-occurrence is counted over at most
-// 30000 of w's documents, taken at a fixed stride, so it is deterministic.
-const std::vector<std::pair<uint32_t, double>>& Engine::translations(uint32_t w) {
-    const uint32_t K = static_cast<uint32_t>(std::max(1.0, P.tr_k));
-    const uint32_t mindf = static_cast<uint32_t>(std::max(1.0, P.tr_mindf));
-    const uint64_t key = (static_cast<uint64_t>(w) << 32) | (static_cast<uint64_t>(K & 0xFFFF) << 16) | (mindf & 0xFFFF);
-    auto it = trans_.find(key);
-    if (it != trans_.end()) return it->second;
-    const size_t V = vocab_.size();
-    std::vector<uint32_t> co(V, 0), stamp(V, 0), seen;
-    const uint64_t lo = post_off_[w], n = post_off_[w + 1] - lo;
-    const uint64_t cap = 30000, stride = n > cap ? (n + cap - 1) / cap : 1;
-    uint32_t mark = 0, sampled = 0;
-    for (uint64_t x = 0; x < n; x += stride) {
-        const uint32_t d = post_[lo + x];
-        ++mark; ++sampled;
-        for (uint64_t i = tok_off_[d]; i < tok_off_[d + 1]; ++i) {
-            const uint32_t t = toks_[i];
-            if (stamp[t] == mark) continue;
-            stamp[t] = mark;
-            if (co[t]++ == 0) seen.push_back(t);
-        }
-    }
-    std::vector<std::pair<uint32_t, double>> cand;
-    const double scale = sampled ? static_cast<double>(n) / sampled : 0.0;
-    for (uint32_t v : seen) {
-        if (v == w || stop_[v] || df_[v] < mindf) continue;
-        cand.push_back({v, co[v] * scale / std::sqrt(static_cast<double>(df_[v]) * df_[w])});
-    }
-    std::sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) {
-        return a.second != b.second ? a.second > b.second : a.first < b.first;
-    });
-    if (cand.size() > K) cand.resize(K);
-    double z = 0;
-    for (auto& x : cand) z += x.second;
-    for (auto& x : cand) x.second /= z > 0 ? z : 1.0;
-    return trans_[key] = std::move(cand);
-}
-
 // ---------------------------------------------------------------------------
 // Smoothed document language model
 // ---------------------------------------------------------------------------
@@ -572,16 +512,6 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
             s.hits.push_back({i, u});
         }
     }
-    // sum_v t(w|v) tf(v,D) per query slot, for the translation model.
-    std::vector<double> trc;
-    if (!trlist_.empty() && d >= 0) {
-        trc.assign(U, 0.0);
-        const uint32_t* t = toks_.data() + tok_off_[d];
-        for (uint32_t i = 0; i < dlen; ++i) {
-            const int32_t m = trmark_[t[i]];
-            if (m >= 0) for (auto& [u, w] : trlist_[m]) trc[u] += w;
-        }
-    }
     const double T = static_cast<double>(total_);
     const double lw = P.lead_w;
     const double ll = std::min<double>(dlen, lead_len);
@@ -590,7 +520,6 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     for (size_t u = 0; u < U; ++u) {
         const double pc = pbg(q.uniq[u]);
         double lp = log_p(tf[u], dlen, pc, dvd);
-        if (!trc.empty()) lp = std::log((1 - P.tr_w) * std::exp(lp) + P.tr_w * trc[u] / std::max<uint32_t>(dlen, 1));
         if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (static_cast<double>(tfl[u]) + lmu * pc) / (ll + lmu));
         f.uni += q.uniq_cnt[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
