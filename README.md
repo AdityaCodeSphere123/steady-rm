@@ -32,6 +32,33 @@ code shared by every submission; it is what actually scores you, so
 reading it (especially `harness/leaderboard.py` and
 `harness/noise_injection.py`) is worth your time.
 
+## Models and relevance models
+
+The graded functions run the submitted model (`competition`: SPUD + lead
+field + proximity, with RM3). The required baselines and RM1/RM2 are
+selectable without editing code; the full list of calls is at the top of
+`submission/feedback.py`.
+
+| `FEEDBACK_MODEL` | document model |
+|---|---|
+| `competition` (default) | SPUD query likelihood + lead field + proximity |
+| `dirichlet` | multinomial unigram QL, Dirichlet mu 500 |
+| `jm` | multinomial unigram QL, Jelinek-Mercer 0.3 |
+
+`FEEDBACK_RM` = 1 (RM1), 2 (RM2) or 3 (RM3, default); `FEEDBACK_LAMBDA`
+overrides the RM3 query weight. Example, plain Dirichlet QL + RM1:
+
+```bash
+FEEDBACK_MODEL=dirichlet FEEDBACK_RM=1 python -m harness.run_harness \
+  --corpus data/full/corpus.jsonl --queries data/full/queries_dev.tsv \
+  --qrels data/full/qrels_dev.txt --candidates data/full/candidates_dev.jsonl
+```
+
+From Python: `fb.rerank(q, pool, 10, model="dirichlet")`,
+`fb.rm_feedback(q, seed, pool, 10, model="dirichlet", rm=2)`,
+`fb.relevance_model(q, seed, variant=1, model="jm")`, or
+`fb.use_model("jm", rm=3, lam=0.7)` to switch the graded functions.
+
 ## Repo map
 
 ```

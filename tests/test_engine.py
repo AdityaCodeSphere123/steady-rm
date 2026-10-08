@@ -106,6 +106,14 @@ def main():
         close(got[d], ref)
     fb.set_params(smoothing=0)
 
+    # 3c. Pure RM1 / RM2 ranking (rm_model 1, 2): sum_w P_R(w) log P(w|D), no query side.
+    for variant, m in ((1, rm1(q, seed)), (2, rm2(q, seed))):
+        fb.set_params(rm_model=variant)
+        got = dict(fb.relevance_model_feedback("apple fruit", seed, pool, 5))
+        for d in pool:
+            close(got[d], sum(p * math.log(pwd_dir(t, d)) for t, p in m.items()))
+    fb.set_params(rm_model=3)
+
     # 4. Conformance: only pool ids, no duplicates, sorted, k respected.
     fb.set_params(**{k: v for k, v in fb.PARAMS.items() if k != "stemmer"})
     for fn in (lambda k: fb.score_candidates("apple fruit", ["d3", "d4", "d3"], k),
@@ -132,7 +140,26 @@ def main():
     a = fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5)
     fb.score_candidates("apple juice", pool, 5)
     assert fb.relevance_model_feedback("apple juice", ["d3", "d4"], pool, 5) == a
+
+    # 6. Model helpers: same output as setting the parameters by hand, and the
+    # graded entrypoints keep the active model afterwards.
+    fb.use_model(stemmer=0)
+    base = fb.relevance_model_feedback("apple juice", ["d2", "d5"], pool, 5)
+    for model in fb.MODELS:
+        for rm in (1, 2, 3):
+            got = fb.rm_feedback("apple juice", ["d2", "d5"], pool, 5, model=model, rm=rm, stemmer=0)
+            fb.set_params(**{**fb.MODELS[model], "rm_model": rm, "stemmer": 0})
+            assert got == fb.relevance_model_feedback("apple juice", ["d2", "d5"], pool, 5), (model, rm)
+            fb.use_model(stemmer=0)
+        assert fb.rerank("apple juice", pool, 5, model=model, stemmer=0)
+        assert fb.relevance_model("apple juice", ["d2", "d5"], 2, model=model, stemmer=0)
+    assert fb.relevance_model_feedback("apple juice", ["d2", "d5"], pool, 5) == base
+    fb.use_model()
     print("all engine tests passed")
+
+
+def test_engine():
+    main()
 
 
 if __name__ == "__main__":

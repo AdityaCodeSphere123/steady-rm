@@ -23,7 +23,7 @@ namespace rm {
     X(stemmer) X(query_stop) X(smoothing) X(mu) X(jm_lambda) X(spud_mu) X(spud_bg) \
     X(w_od) X(w_uw) X(uw_window) X(lead_w) X(lead_len) X(lead_mu) \
     X(fb_mu) X(fb_docs) X(fb_terms) X(beta) X(support_frac) X(idf_power) X(fb_qterms) \
-    X(fb_cov) X(fb_anchor_exp) X(lambda) X(fb_mode) X(fb_scale) X(fb_sdm)
+    X(fb_cov) X(fb_anchor_exp) X(rm_model) X(lambda) X(fb_mode) X(fb_scale) X(fb_sdm)
 
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
@@ -901,7 +901,8 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
     if (q.terms.empty()) return pool_order(cands, k);
-    if (P.lambda >= 1) return score_candidates(query, cands, k);   // Track B == Track A
+    const int rm = P.rm_model == 1 ? 1 : P.rm_model == 2 ? 2 : 3;
+    if (rm == 3 && P.lambda >= 1) return score_candidates(query, cands, k);   // Track B == Track A
     ensure_pair_stats(q);
     Marks mk(*this, q);
     Scratch& s = *scratch_[0];
@@ -909,8 +910,9 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     for (size_t i = 0; i < cands.size(); ++i) docs[i] = doc_index(cands[i]);
     auto seed = seed_weights(q, seeds, s);
     if (seed.empty()) return score_candidates(query, cands, k);   // no usable feedback
-    auto model = est_rm1(q, seed, s);
+    auto model = rm == 2 ? est_rm2(q, seed, s) : est_rm1(q, seed, s);
     if (model.empty()) return score_candidates(query, cands, k);
+    if (rm != 3) return top_k(rm_pool(docs, model), cands, k);
     const double lam = std::max(0.0, P.lambda);
 
     if (P.fb_mode >= 1) {

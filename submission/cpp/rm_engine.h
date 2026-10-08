@@ -55,7 +55,11 @@ struct Params {
     // the rest are weighted by coverage^fb_anchor_exp.
     double fb_cov = 0, fb_anchor_exp = 0;
     // --- feedback ranking -------------------------------------------------
-    double lambda = 0.5;         // weight on the query side; 1 = Track A exactly
+    // 1 RM1: rank the pool by sum_w P_RM1(w|R) log P(w|D) (no query side)
+    // 2 RM2: the same with the RM2 estimate
+    // 3 RM3: RM1 interpolated with the query, as set by lambda and fb_mode
+    double rm_model = 3;
+    double lambda = 0.5;         // RM3 weight on the query side; 1 = Track A exactly
     // 0  RM3: lambda * P(Q|D)/|Q| + (1-lambda) * sum_w P(w|R) log P(w|D)
     // 1  (1-w) S_A(D) + w (E(D) - mean E) / fb_scale, w = 1-lambda, where
     //    S_A is the score_candidates() score and E(D) = sum_w P(w|R) log P(w|D)
