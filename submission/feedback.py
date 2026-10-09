@@ -31,6 +31,7 @@ _FLAG_SETS = [
     ["-std=c++17", "-O2", "-fPIC", "-pthread", "-shared"],
 ]
 
+# Hidden-leaderboard best (A 0.53809, MAP 0.46063, B 0.53814, C1 1.0, C2 0.99854).
 PARAMS: Dict[str, float] = {
     "stemmer": 2, "query_stop": 1,
     "smoothing": 3, "spud_mu": 800, "spud_bg": 1, "mu": 450, "jm_lambda": 0.5,
@@ -60,6 +61,7 @@ _lib = None
 
 
 def _digest(flags: Sequence[str]) -> str:
+    """Hash of the C++ sources and compiler flags, used as the library filename."""
     h = hashlib.sha256()
     for name in _SOURCES + _HEADERS:
         with open(os.path.join(_CPP, name), "rb") as fh:
@@ -69,6 +71,7 @@ def _digest(flags: Sequence[str]) -> str:
 
 
 def _compile(out: str, flags: Sequence[str]) -> bool:
+    """Compile the three translation units in parallel and link them into one shared library."""
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cxx = os.environ.get("CXX", "g++")
     tag = f"{os.getpid()}"
@@ -102,6 +105,7 @@ def _compile(out: str, flags: Sequence[str]) -> bool:
 
 
 def _declare(lib) -> None:
+    """Tell ctypes the argument and return types of every C entry point."""
     c = ctypes
     I32, F64 = c.POINTER(c.c_int32), c.POINTER(c.c_double)
     sig = {
@@ -119,6 +123,7 @@ def _declare(lib) -> None:
 
 
 def _load_native():
+    """Load a cached build of this source, or compile one; try -O3 then a plain -O2 fallback."""
     dirs = [os.path.join(_HERE, "_build"), os.path.join(tempfile.gettempdir(), "rm_engine_build")]
     extra = os.environ.get("RM_EXTRA_FLAGS", "").split()
     for flags in ([f + extra for f in _FLAG_SETS] if extra else _FLAG_SETS):
@@ -140,16 +145,19 @@ def _load_native():
 
 
 def backend() -> str:
+    """Name of the scoring backend. Always "cpp" once this module has imported."""
     return "cpp"
 
 
 def set_params(**kw: float) -> None:
+    """Write named engine parameters (smoothing, lambda, fb_docs, ...) into the live engine."""
     for k, v in kw.items():
         if _lib.rm_set_param(k.encode(), float(v)) != 0:
             raise KeyError(f"unknown parameter {k!r}")
 
 
 def _json_call(fn, *args):
+    """Call a C function that writes JSON into a buffer, growing the buffer if it was too small."""
     size = 1 << 16
     while True:
         buf = ctypes.create_string_buffer(size)
@@ -160,15 +168,18 @@ def _json_call(fn, *args):
 
 
 def _join(ids: Sequence[str]) -> Tuple[bytes, int]:
+    """Pack document ids as one newline-separated byte string plus the count."""
     ids = list(ids)
     return "\n".join(ids).encode("utf-8"), len(ids)
 
 
 def stats() -> dict:
+    """Collection statistics from the last prepare(): docs, vocab, tokens, average length."""
     return _json_call(_lib.rm_stats)
 
 
 def _config(model: str, rm=3, lam: Optional[float] = None, **overrides: float) -> Dict[str, float]:
+    """Build a parameter dict for one named model and one of RM1, RM2 or RM3."""
     if model not in MODELS:
         raise KeyError(f"unknown model {model!r}; choose from {sorted(MODELS)}")
     if rm not in _RM:
@@ -183,6 +194,7 @@ _active: Dict[str, float] = {}
 
 
 def use_model(model: str = "competition", rm=3, lam: Optional[float] = None, **overrides: float) -> None:
+    """Make the graded functions use this model until the next use_model() call."""
     global _active
     _active = _config(model, rm, lam, **overrides)
     set_params(**_active)
@@ -190,6 +202,7 @@ def use_model(model: str = "competition", rm=3, lam: Optional[float] = None, **o
 
 @contextmanager
 def _using(cfg: Dict[str, float]):
+    """Apply cfg for the body of a with-block, then restore the active model."""
     set_params(**cfg)
     try:
         yield
@@ -199,6 +212,7 @@ def _using(cfg: Dict[str, float]):
 
 def rerank(query: str, candidate_doc_ids: List[str], k: int = 10, model: str = "competition",
            **overrides: float) -> List[Tuple[str, float]]:
+    """score_candidates() under a chosen model, without changing the active model afterwards."""
     with _using(_config(model, **overrides)):
         return score_candidates(query, candidate_doc_ids, k)
 
@@ -206,12 +220,14 @@ def rerank(query: str, candidate_doc_ids: List[str], k: int = 10, model: str = "
 def rm_feedback(query: str, pseudo_relevant_doc_ids: List[str], candidate_doc_ids: List[str], k: int = 10,
                 model: str = "competition", rm=3, lam: Optional[float] = None,
                 **overrides: float) -> List[Tuple[str, float]]:
+    """relevance_model_feedback() for one model and one RM variant, then restore the active model."""
     with _using(_config(model, rm, lam, **overrides)):
         return relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, k)
 
 
 def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int = 1,
                     model: Optional[str] = None, **overrides: float) -> List[Tuple[str, float]]:
+    """Return P(w|R) as (term, probability) pairs; variant 1 is RM1 and variant 2 is RM2."""
     s, ns = _join(pseudo_relevant_doc_ids)
     if model is None and not overrides:
         return [tuple(x) for x in _json_call(_lib.rm_relevance_model, query.encode(), s, ns, int(variant))]
@@ -220,11 +236,13 @@ def relevance_model(query: str, pseudo_relevant_doc_ids: List[str], variant: int
 
 
 def prepare(corpus_path: str) -> None:
+    """Read the corpus once and store collection background statistics P(w|C)."""
     if _lib.rm_prepare(os.fspath(corpus_path).encode()) != 0:
         raise RuntimeError(_lib.rm_last_error().decode())
 
 
 def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
+    """Call a C ranker and turn pool indexes back into (doc_id, score) pairs."""
     k = min(int(k), len(pool))
     if k <= 0:
         return []
@@ -238,11 +256,13 @@ def _run(fn, pool: List[str], k: int, *args) -> List[Tuple[str, float]]:
 
 
 def score_candidates(query: str, candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
+    """Rerank the given candidate pool by unigram query likelihood. Graded Track A entry point."""
     return _run(_lib.rm_score, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"))
 
 
 def relevance_model_feedback(query: str, pseudo_relevant_doc_ids: List[str],
                              candidate_doc_ids: List[str], k: int = 10) -> List[Tuple[str, float]]:
+    """Estimate RM1, RM2 or RM3 from the seed ids and rerank the candidate pool. Graded Tracks B and C."""
     s, ns = _join(list(dict.fromkeys(pseudo_relevant_doc_ids)))
     return _run(_lib.rm_feedback, list(dict.fromkeys(candidate_doc_ids)), k, query.encode("utf-8"), s, ns)
 

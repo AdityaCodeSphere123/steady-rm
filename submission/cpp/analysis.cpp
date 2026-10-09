@@ -58,6 +58,7 @@ const std::unordered_set<std::string> INDEX_STOPWORDS = {
 };
 
 
+// Porter stemmer. stem() reduces one lowercase word.
 class PorterStemmer {
     std::string b;
     int k = 0;   // index of the last character of the word
@@ -280,6 +281,7 @@ public:
 thread_local PorterStemmer g_porter;
 thread_local std::unordered_map<std::string, std::string> g_stem_cache[2];
 
+// Return w unchanged when stemmer is 0, otherwise its Porter stem. Cached per thread.
 const std::string& apply_stem(const std::string& w, uint8_t stemmer) {
     auto& cache = g_stem_cache[stemmer ? 1 : 0];
     auto it = cache.find(w);

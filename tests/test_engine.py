@@ -76,6 +76,15 @@ def main():
     for d in pool:
         close(ql[d], sum(math.log(pwd_dir(t, d)) for t in q))
 
+    # 1b. Jelinek-Mercer query likelihood, checked on its own: (1-λ) tf/|D| + λ P(w|C).
+    Ljm = 0.35
+    fb.set_params(smoothing=1, jm_lambda=Ljm)
+    ql = dict(fb.score_candidates("apple fruit", pool, 5))
+    pwd_jm = lambda w, d: (1 - Ljm) * (tf[d][w] / dl[d]) + Ljm * pc(w)
+    for d in pool:
+        close(ql[d], sum(math.log(pwd_jm(t, d)) for t in q))
+    fb.set_params(smoothing=0)
+
     # 2. RM1 and RM2 estimates.
     for variant, ref in ((1, rm1(q, seed)), (2, rm2(q, seed))):
         got = dict(fb.relevance_model("apple fruit", seed, variant))

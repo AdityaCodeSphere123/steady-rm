@@ -26,7 +26,7 @@ copy_tree() {
 
 # Required entrypoint + C++ engine + README + optional bonus set
 copy_tree submission
-# Hand-check demo referenced from submission/README.md
+# Hand-check demo referenced from README.md
 copy_tree tools/__init__.py
 copy_tree tools/verify_rm.py
 
@@ -47,7 +47,7 @@ copy_tree .github
 # the tuning scripts in tools/, tune logs, assignment PDF/tex, NOTES, runs/
 
 rm -f "$STAGE/scripts/pack_submission.sh"
-for f in submission/feedback.py submission/README.md; do
+for f in submission/feedback.py README.md; do
   if [[ ! -f "$STAGE/$f" ]]; then
     echo "error: $f missing" >&2
     exit 1
@@ -57,5 +57,5 @@ done
 rm -f "$OUT"
 ( cd "$STAGE" && zip -r -q "$OUT" . )
 echo "Wrote $OUT ($(du -h "$OUT" | awk '{print $1}'))"
-unzip -l "$OUT" | grep -E 'submission/(feedback\.py|README\.md|adversarial_set\.json|cpp/rm_engine\.cpp)|tools/verify_rm\.py' 
+unzip -l "$OUT" | grep -E 'submission/(feedback\.py|adversarial_set\.json|cpp/rm_engine\.cpp)|(^|/)README\.md|tools/verify_rm\.py' 
 echo "files: $(unzip -l "$OUT" | tail -1)"

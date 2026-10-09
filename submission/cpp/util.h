@@ -22,6 +22,7 @@ inline uint64_t hash_str(std::string_view s) {
     return h;
 }
 
+// Interned string table. find() returns NONE when the string is absent.
 class StrTable {
 public:
     static constexpr uint32_t NONE = 0xFFFFFFFFu;
@@ -98,6 +99,7 @@ private:
     size_t mask_ = 0;
 };
 
+// Fixed worker pool. run() calls fn(chunk, worker) and waits until every chunk finishes.
 class ThreadPool {
 public:
     explicit ThreadPool(int w) : W_(w < 1 ? 1 : (w > MAX_THREADS ? MAX_THREADS : w)) {

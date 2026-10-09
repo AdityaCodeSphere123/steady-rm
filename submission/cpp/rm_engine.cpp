@@ -22,6 +22,7 @@ namespace rm {
     X(fb_mu) X(fb_docs) X(fb_terms) X(beta) X(support_frac) X(idf_power) X(fb_qterms) \
     X(fb_cov) X(fb_anchor_exp) X(rm_model) X(lambda) X(fb_mode) X(fb_scale) X(fb_sdm)
 
+// Copy one named parameter into p. Unknown names return false.
 bool set_param(Params& p, const std::string& n, double v) {
 #define X(f) if (n == #f) { p.f = v; return true; }
     RM_PARAMS(X)
@@ -41,6 +42,7 @@ static const bool T_INIT = [] {
     return true;
 }();
 
+// Split text into lowercase surface tokens. Single letters separated by dots are glued into an acronym.
 template <typename Fn>
 static void each_surface(std::string_view text, Fn&& emit) {
     (void)T_INIT;
@@ -108,6 +110,7 @@ struct Shard {
 };
 }  // namespace
 
+// One pass over the corpus: tokenize, stem, and store cf, df and document-vocabulary sizes.
 bool Engine::prepare(const std::string& path_in, std::string& err) {
     auto t0 = std::chrono::steady_clock::now();
     std::string path = path_in;
@@ -267,6 +270,7 @@ bool Engine::prepare(const std::string& path_in, std::string& err) {
     return true;
 }
 
+// JSON summary of the collection built by prepare().
 std::string Engine::stats_json() const {
     std::ostringstream o;
     o << "{\"docs\":" << n_docs() << ",\"vocab\":" << vocab_.size() << ",\"tokens\":" << total_
@@ -275,11 +279,13 @@ std::string Engine::stats_json() const {
     return o.str();
 }
 
+// Internal document index, or -1 when the id is not in the corpus.
 int32_t Engine::doc_index(std::string_view id) const {
     uint32_t i = docids_.find(id);
     return i == StrTable::NONE ? -1 : docid_to_doc_[i];
 }
 
+// Tokenize the query, drop stopwords, stem, and record adjacent term pairs for proximity.
 Engine::Query Engine::parse_query(std::string_view qtext) {
     const uint8_t stemmer = static_cast<uint8_t>(P.stemmer);
     std::vector<std::string> surf;
@@ -314,6 +320,7 @@ struct Engine::Marks {
     ~Marks() { for (uint32_t t : q.uniq) e.qmark_[t] = 0xFFFF; }
 };
 
+// Count ordered adjacent bigrams (od) and unordered co-occurrences inside a window (uw).
 static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
                         const std::vector<std::pair<uint16_t, uint16_t>>& pairs, uint32_t W,
                         uint64_t* od, uint64_t* uw) {
@@ -334,6 +341,7 @@ static void count_pairs(const std::vector<std::pair<uint32_t, uint16_t>>& hits,
     }
 }
 
+// Inverted lists of documents that contain each vocabulary term, built once and reused for pair counts.
 void Engine::build_postings() {
     post_off_.clear(); post_.clear();
     const size_t V = vocab_.size(), N = n_docs();
@@ -362,6 +370,7 @@ void Engine::build_postings() {
     });
 }
 
+// Fill collection pair counts for this query's bigrams, using a cache so a pair is counted only once.
 void Engine::ensure_pair_stats(Query& q) {
     if (q.pairs.empty() || (P.w_od <= 0 && P.w_uw <= 0)) return;
     const uint32_t W = static_cast<uint32_t>(std::max(2.0, P.uw_window));
@@ -418,18 +427,22 @@ void Engine::ensure_pair_stats(Query& q) {
     }
 }
 
+// Background probability. SPUD with spud_bg uses document frequency; everything else uses collection frequency.
 double Engine::pbg(uint32_t t) const {
     if (P.smoothing >= 3 && P.spud_bg > 0 && df_total_ > 0) return df_[t] / df_total_;
     return static_cast<double>(cf_[t]) / static_cast<double>(total_);
 }
 
+// Dirichlet log probability: log (tf + mu P(w|C)) / (|D| + mu).
 double Engine::log_p_dir(uint32_t tf, uint32_t dlen, double pc) const {
     const double mu = P.mu;
     return std::log((static_cast<double>(tf) + mu * pc) / (static_cast<double>(dlen) + mu));
 }
 
+// Log P(w|D) under the active smoother: 3 SPUD, 2 two-stage, 1 Jelinek-Mercer, 0 Dirichlet.
 double Engine::log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const {
     if (P.smoothing >= 3) {
+        // SPUD: ( |V_D| * tf/|D| + omega * P(w|C) ) / ( |V_D| + omega ).
         const double om = P.spud_mu;
         const double ml = dlen ? static_cast<double>(tf) / dlen : 0.0;
         return std::log((dv * ml + om * pc) / (dv + om));
@@ -437,10 +450,12 @@ double Engine::log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const {
     const double mu = P.mu;
     const double dir = (static_cast<double>(tf) + mu * pc) / (static_cast<double>(dlen) + mu);
     if (P.smoothing >= 2) {
+        // Two-stage: (1-λ) Dirichlet + λ P(w|C).
         const double l = std::min(0.95, std::max(0.0, P.jm_lambda));
         return std::log(std::max(1e-18, (1.0 - l) * dir + l * pc));
     }
     if (P.smoothing >= 1) {
+        // Jelinek-Mercer: (1-λ) tf/|D| + λ P(w|C).
         const double l = P.jm_lambda;
         double ml = dlen ? static_cast<double>(tf) / dlen : 0.0;
         return std::log((1 - l) * ml + l * pc);
@@ -448,6 +463,7 @@ double Engine::log_p(uint32_t tf, uint32_t dlen, double pc, uint32_t dv) const {
     return std::log(dir);
 }
 
+// Unigram query log-likelihood for one document, plus lead-field and proximity features when those weights are on.
 Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) const {
     DocFeat f;
     const size_t U = q.uniq.size();
@@ -476,6 +492,7 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     for (size_t u = 0; u < U; ++u) {
         const double pc = pbg(q.uniq[u]);
         double lp = log_p(tf[u], dlen, pc, dvd);
+        // Lead field: mix the full-document model with Dirichlet over the first lead_len tokens.
         if (lw > 0) lp = std::log((1 - lw) * std::exp(lp) + lw * (static_cast<double>(tfl[u]) + lmu * pc) / (ll + lmu));
         f.uni += q.uniq_cnt[u] * lp;
         if (tf[u]) f.matched += q.uniq_cnt[u];
@@ -499,10 +516,12 @@ Engine::DocFeat Engine::doc_features(const Query& q, int32_t d, Scratch& s) cons
     return f;
 }
 
+// Track A document score. sdm adds the ordered-bigram and unordered-window terms.
 double Engine::qpart(const DocFeat& f, bool sdm) const {
     return sdm ? f.uni + P.w_od * f.od + P.w_uw * f.uw : f.uni;
 }
 
+// Score every document in the pool. With a relevance model, mix λ * QL/|Q| + (1-λ) * sum_w P(w|R) log P(w|D).
 std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t>& docs,
                                        const Model* model, double lam, bool sdm) {
     const size_t n = docs.size();
@@ -564,6 +583,7 @@ std::vector<double> Engine::score_pool(const Query& q, const std::vector<int32_t
     return out;
 }
 
+// Expansion score E(D) = sum_w P(w|R) log P(w|D) over the relevance-model terms.
 std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs, const Model& model) const {
     std::unordered_map<uint32_t, uint32_t> slot;
     for (size_t j = 0; j < model.size(); ++j) slot.emplace(model[j].first, static_cast<uint32_t>(j));
@@ -589,6 +609,7 @@ std::vector<double> Engine::rm_pool(const std::vector<int32_t>& docs, const Mode
     return out;
 }
 
+// Highest k scores. Ties break by document id so the ranking is deterministic.
 std::vector<Ranked> Engine::top_k(const std::vector<double>& score, const std::vector<std::string_view>& ids,
                                   int k) const {
     const size_t n = score.size();
@@ -605,12 +626,14 @@ std::vector<Ranked> Engine::top_k(const std::vector<double>& score, const std::v
     return out;
 }
 
+// Fallback when the query has no known terms: keep the pool order the harness already gave us.
 std::vector<Ranked> Engine::pool_order(const std::vector<std::string_view>& ids, int k) const {
     std::vector<Ranked> out;
     for (size_t i = 0; i < ids.size() && static_cast<int>(i) < k; ++i) out.push_back({static_cast<int32_t>(i), -static_cast<double>(i)});
     return out;
 }
 
+// Track A: query likelihood over the candidate pool only, never the rest of the corpus.
 std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::vector<std::string_view>& cands, int k) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
@@ -622,6 +645,7 @@ std::vector<Ranked> Engine::score_candidates(std::string_view query, const std::
     return top_k(score_pool(q, docs, nullptr, 1.0, true), cands, k);
 }
 
+// Sorted (term, tf) pairs for one document.
 std::vector<std::pair<uint32_t, uint32_t>> Engine::bag(int32_t d, Scratch& s) const {
     std::vector<std::pair<uint32_t, uint32_t>> b;
     if (d < 0) return b;
@@ -634,6 +658,7 @@ std::vector<std::pair<uint32_t, uint32_t>> Engine::bag(int32_t d, Scratch& s) co
     return b;
 }
 
+// P(D|Q) over the supplied seed. Unknown ids are dropped. Low query coverage is dropped when fb_cov > 0.
 std::vector<Engine::Seed> Engine::seed_weights(const Query& q, const std::vector<std::string_view>& seeds, Scratch& s) {
     std::vector<Seed> out;
     std::unordered_set<int32_t> seen;
@@ -669,11 +694,13 @@ std::vector<Engine::Seed> Engine::seed_weights(const Query& q, const std::vector
     return out;
 }
 
+// How many seed documents a term must occur in before it can enter the relevance model.
 int Engine::support_needed(size_t n_seed) const {
     if (P.support_frac <= 0) return 1;
     return std::max(1, static_cast<int>(std::ceil(P.support_frac * static_cast<double>(n_seed) - 1e-9)));
 }
 
+// Keep the top fb_terms, force query terms in when asked, then renormalize to a distribution.
 Engine::Model Engine::finish_model(Model& m, const std::vector<uint32_t>& must) const {
     auto by_score = [](const auto& a, const auto& b) {
         return a.second != b.second ? a.second > b.second : a.first < b.first;
@@ -712,6 +739,7 @@ Engine::Model Engine::finish_model(Model& m, const std::vector<uint32_t>& must) 
     return m;
 }
 
+// RM1: P(w|R) = sum_D P(w|D) P(D|Q). fb_mu 0 is maximum likelihood; otherwise Dirichlet.
 Engine::Model Engine::est_rm1(const Query& q, const std::vector<Seed>& seed, Scratch& s) {
     std::unordered_map<uint32_t, std::pair<double, int>> acc;
     const double T = static_cast<double>(total_), fm = P.fb_mu;
@@ -744,6 +772,7 @@ Engine::Model Engine::est_rm1(const Query& q, const std::vector<Seed>& seed, Scr
     return finish_model(m, must);
 }
 
+// RM2: P(w|R) proportional to P(w) * product over query terms of sum_D P(q|D) P(D|w).
 Engine::Model Engine::est_rm2(const Query& q, const std::vector<Seed>& seed, Scratch& s) {
     const size_t S = seed.size(), Q = q.len();
     if (!S || !Q) return {};
@@ -800,6 +829,7 @@ Engine::Model Engine::est_rm2(const Query& q, const std::vector<Seed>& seed, Scr
     return finish_model(logv, {});
 }
 
+// P(w|R) itself, for the hand check. variant 2 is RM2; anything else is RM1.
 std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_view query,
                                                                     const std::vector<std::string_view>& seeds,
                                                                     int variant) {
@@ -816,12 +846,14 @@ std::vector<std::pair<std::string, double>> Engine::relevance_model(std::string_
     return out;
 }
 
+// Tracks B and C. Uses only the seed argument, never a cached score_candidates() ranking.
 std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<std::string_view>& seeds,
                                      const std::vector<std::string_view>& cands, int k) {
     if (cands.empty() || k <= 0) return {};
     Query q = parse_query(query);
     if (q.terms.empty()) return pool_order(cands, k);
     const int rm = P.rm_model == 1 ? 1 : P.rm_model == 2 ? 2 : 3;
+    // λ = 1 is defined to be exactly the Track A ranking and scores.
     if (rm == 3 && P.lambda >= 1) return score_candidates(query, cands, k);
     ensure_pair_stats(q);
     Marks mk(*this, q);
@@ -835,6 +867,7 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     if (rm != 3) return top_k(rm_pool(docs, model), cands, k);
     const double lam = std::max(0.0, P.lambda);
 
+    // Submitted mix: λ * Track A score + (1-λ) * centered expansion score.
     if (P.fb_mode >= 1) {
         std::vector<double> sa = score_pool(q, docs, nullptr, 1.0, true);
         std::vector<double> r = rm_pool(docs, model);
