@@ -1,4 +1,4 @@
-# Assignment 2: Query Drift Arena
+# Assignment 2: Query Drift Arena - Aditya Anand (2023CS50284)
 
 Rerank a provided candidate pool with a query-likelihood model, then apply
 relevance-model feedback (RM1, RM2, RM3). The scoring code is a small C++
