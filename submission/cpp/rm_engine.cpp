@@ -884,4 +884,4 @@ std::vector<Ranked> Engine::feedback(std::string_view query, const std::vector<s
     return top_k(score_pool(q, docs, &model, lam, P.fb_sdm > 0), cands, k);
 }
 
-}  // namespace rm
+} 
