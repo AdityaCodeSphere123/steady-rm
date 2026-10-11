@@ -260,9 +260,3 @@ On that panel the file drops mean nDCG@10 by 0.649:
 | 25 | 7 | 0.589 |
 
 The submitted model does not move. Its top 10 is the same on all five queries, because λ = 0.9 leaves little weight on the seed and the coverage filter drops documents that miss most of the query. Typical RM1 and RM3 setups on the panel drop by about 0.6 to 0.9.
-
-## Provenance
-
-I started from the Assignment 2 repository for the course. The analyzer, Porter stemmer, and stopword list come from my Assignment 1 code. The stemmer follows Porter's reference implementation, with a bounds check on short words. SPUD follows Cummins, Paik, and Lv (TOIS 2015). Dirichlet and Jelinek–Mercer follow Zhai and Lafferty (SIGIR 2001). RM1–RM3 follow Lavrenko and Croft (SIGIR 2001). No search engine or IR scoring library is used.
-
-I used Cursor to write most of the C++ engine, to check it on examples, and to draft the report. I chose SPUD and λ = 0.9, dropped the two-model setup, tuned the parameters, and ran the harness.
