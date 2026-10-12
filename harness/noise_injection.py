@@ -1,6 +1,6 @@
 """
 harness/noise_injection.py -- a fully public, documented query-drift
-stress-test recipe you can run locally (assignment Section 6, "Practice
+stress-test recipe you can run locally (spec Section 6, "Practice
 noise recipe (public)").
 
 perturb_pseudo_relevant_set() takes a clean pseudo-relevant doc_id list
@@ -17,9 +17,9 @@ wildly unrelated noise would be. Use this to test your own
 relevance_model_feedback() against contaminated input before you submit.
 
 THIS IS NOT THE GRADING RECIPE. The real Track C noise levels, sampling
-strategy, and number of perturbed conditions are undisclosed (assignment
+strategy, and number of perturbed conditions are undisclosed (spec
 Section 6, "Grading noise recipe (undisclosed)") for exactly the reason
-Assignment 1's held-out topics and baseline parameters were undisclosed:
+the earlier project's held-out topics and baseline parameters were undisclosed:
 a submission tuned against a known perturbation recipe is measuring its
 ability to guess the recipe, not its robustness to realistic drift. Build
 a feedback function that is robust across a *range* of noise conditions
@@ -45,7 +45,7 @@ def stable_seed(qid: str, base_seed: int) -> int:
     actually requires."""
     return base_seed + (zlib.crc32(qid.encode("utf-8")) & 0xFFFF)
 
-# Practice noise levels you can sweep locally (see assignment Section 8,
+# Practice noise levels you can sweep locally (see project Section 8,
 # "a plot or table ... at the highest noise level your local
 # noise_injection.py practice recipe supports"). The real grading recipe
 # is not required to use these same levels.

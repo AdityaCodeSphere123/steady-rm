@@ -3,13 +3,13 @@ harness/run_harness.py -- runs your submission end-to-end against a
 corpus/queries/qrels/candidates set and reports metrics, exactly like the
 grading harness (minus the undisclosed Track C noise recipe -- see
 harness/noise_injection.py -- and minus the undisclosed reference
-retriever that generated the candidates file -- see the assignment,
+retriever that generated the candidates file -- see the spec,
 Section 6).
 
-Unlike Assignment 1, this is a SINGLE IN-PROCESS SCRIPT -- prepare(),
+Unlike the earlier project, this is a SINGLE IN-PROCESS SCRIPT -- prepare(),
 score_candidates(), and relevance_model_feedback() are all called
 directly in this process, with no build/load subprocess split and no
-Docker image (assignment Section 4.2). You are also never asked to rank
+Docker image (spec Section 4.2). You are also never asked to rank
 the whole corpus: every retrieval call here is scoped to the provided
 candidate pool for that query (typically ~12-100 documents), never all of
 `data/toy/corpus.jsonl` or `data/full/corpus.jsonl`.
@@ -80,10 +80,10 @@ def _validate_and_sort_results(
     valid_doc_ids: Optional[Set[str]] = None,
 ) -> List[Tuple[str, float]]:
     """Anti-gaming + sanity check applied to every retrieve-shaped call:
-    rejects duplicate doc_ids (see Assignment 1's harness/metrics.py for
+    rejects duplicate doc_ids (see the earlier project's harness/metrics.py for
     why this matters -- nDCG@10/MAP@10 are both unbounded above by
     construction, so a repeated known-relevant doc_id is a real exploit,
-    not a cosmetic bug), enforces the k cap, and -- new this assignment --
+    not a cosmetic bug), enforces the k cap, and -- new this project --
     rejects any doc_id not present in `valid_doc_ids` when given: a
     reranker must only ever return documents it was actually handed as
     candidates, never invent or recall documents from outside the

@@ -32,7 +32,7 @@ def test_track_a_lowest_and_highest_in_class():
 
 
 def test_track_a_narrow_raw_spread_still_uses_full_weight_range():
-    # Same lesson as Assignment 1's leaderboard fix: a tightly clustered
+    # Same lesson as the earlier project's leaderboard fix: a tightly clustered
     # raw metric must still spread its BEST/WORST teams across the full
     # weight range under percentile ranking.
     team_ndcg = {"a": 0.1674, "b": 0.1990, "c": 0.2276}

@@ -1,4 +1,4 @@
-"""COL764 Assignment 2: QL reranking and relevance model feedback.
+"""QL reranking and relevance model feedback.
 
 score_candidates() reranks a candidate pool by unigram query likelihood
 (Track A); relevance_model_feedback() estimates a relevance model (RM1, RM2

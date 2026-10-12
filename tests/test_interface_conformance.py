@@ -1,6 +1,6 @@
 """
 tests/test_interface_conformance.py -- the exact check the CI conformance
-job runs on every push (assignment Section 5, "Submission Interface &
+job runs on every push (spec Section 5, "Submission Interface &
 Conformance Checking"). If this file passes, your submission has the
 right shape for the grading harness to run it; it says nothing about
 ranking quality.
@@ -69,7 +69,7 @@ def test_relevance_model_feedback_returns_well_formed_results_from_the_candidate
 
 
 def test_relevance_model_feedback_may_not_return_a_doc_id_outside_the_candidate_pool():
-    """Anti-gaming check specific to this assignment's design (assignment
+    """Anti-gaming check specific to this project's design (spec
     Section 5): a reranker must only ever return documents from the
     candidate_doc_ids it was given -- never a doc_id from
     pseudo_relevant_doc_ids that happens to fall outside candidate_doc_ids,
@@ -84,7 +84,7 @@ def test_relevance_model_feedback_may_not_return_a_doc_id_outside_the_candidate_
 
 
 def test_relevance_model_feedback_does_not_require_prior_score_candidates_call():
-    """The conformance check for assignment Section 5, "call-order
+    """The conformance check for project Section 5, "call-order
     independence": relevance_model_feedback() must work correctly when
     called directly for a query this process has never passed to
     score_candidates() at all -- the real harness sometimes does exactly
@@ -111,7 +111,7 @@ def test_relevance_model_feedback_does_not_require_prior_score_candidates_call()
 
 
 def test_retrieve_shaped_call_may_not_return_a_duplicate_doc_id():
-    # Anti-gaming check: see Assignment 1's harness/metrics.py module
+    # Anti-gaming check: see the earlier project's harness/metrics.py module
     # docstring, "A note on duplicate doc_ids" -- the same exploit
     # applies here (nDCG@10/MAP@10 are unbounded above by construction).
     with pytest.raises(ValueError, match="duplicate doc_id"):

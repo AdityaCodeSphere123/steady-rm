@@ -2,15 +2,15 @@
 
 ## `toy/` -- local development set (ships with this repo)
 
-The same 20-document, 6-query, graded-qrels toy set used in Assignment 1
+The same 20-document, 6-query, graded-qrels toy set used in the earlier project
 (`corpus.jsonl`, `queries_dev.tsv`, `qrels_dev.txt` -- identical files,
 identical format), plus a NEW `candidates_dev.jsonl` specific to this
-assignment. Reused deliberately: you already have working
-tokenisation/loading code for this exact corpus from Assignment 1, and it
+project. Reused deliberately: you already have working
+tokenisation/loading code for this exact corpus from the earlier project, and it
 is small enough that a correct implementation should get every judged
 query essentially right.
 
-**The toy set is not the assignment corpus and its scores do not count
+**The toy set is not the full corpus and its scores do not count
 toward your grade.** Use it to catch bugs, not to tune lambda or mu.
 
 Files:
@@ -27,10 +27,10 @@ Files:
   top-100, which will not have 100% recall of every relevant document --
   a realistic constraint your reranker has to live with, not a bug.
 
-## The real assignment corpus
+## The real corpus
 
 Run `python scripts/download_full_corpus.py` to fetch the actual
-assignment collection via `ir_datasets` (see the assignment spec, Section
+collection via `ir_datasets` (see the spec, Section
 6, for the exact dataset name announced for this offering). Writes
 `corpus.jsonl`/`queries_dev.tsv`/`qrels_dev.txt` into `data/full/` in the
 same format as the toy set -- your code does not need to change between

@@ -1,12 +1,12 @@
 """
 harness/candidates_io.py -- reading the provided top-K candidate list
-every submission reranks (assignment Section 6). Deliberately
+every submission reranks (spec Section 6). Deliberately
 dependency-free, same conventions as harness/trec_io.py.
 
 Format (candidates_dev.jsonl): one JSON object per line,
     {"qid": "q1", "candidates": [["d18", 12.34], ["d16", 9.87], ...]}
 already sorted best-first by whatever first-pass retriever produced them.
-The exact retriever and its parameters are NOT disclosed (assignment
+The exact retriever and its parameters are NOT disclosed (spec
 Section 6, "Where the provided candidates come from") -- only its output
 for the released dev/toy topics is. The held-out set's candidates file is
 never released at all; course staff apply the same harness against it

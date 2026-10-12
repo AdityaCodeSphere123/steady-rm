@@ -271,12 +271,8 @@ The set is five dev queries: 48, 29, 44, 25 and 22. Each list comes from that qu
 
 I grew each list one document at a time, then tried one swap or deletion when that raised the average drop. The panel was ten of my own setups, each with Porter stemming and with raw tokens: submitted RM3 and RM1, the tuned Dirichlet and Jelinek--Mercer RM3, textbook RM1, RM2 and RM3, RM3 with a uniform document prior, $\lambda = 0.7$, and Dirichlet RM3 with $\mu = 2000$. On that panel the file drops mean nDCG@10 by 0.649 (query 48: 0.702 on 8 documents, 44: 0.671 on 5, 29: 0.657 on 6, 22: 0.625 on 6, 25: 0.589 on 7). The submitted model does not move. Its top 10 is the same on all five queries because $\lambda = 0.9$ leaves little weight on the seed and the coverage filter drops documents that miss most of the query. Typical RM1 and RM3 setups on the panel drop by about 0.6 to 0.9.
 
-\section{AI use and code provenance}
+\section{Code provenance}
 
-\paragraph{AI use:}
-I used Cursor to write most of the C++ engine, to check it on different examples and to draft this report. I chose SPUD and $\lambda{=}0.9$, dropped the two-model setup, tuned the parameters and ran the harness. I checked the measured numbers and I am responsible for the code I submit.
-
-\paragraph{Code provenance: }
 I started from the Assignment~2 code given with the course repository. For the analyzer, Porter stemming and stopword lists I went back to my own Assignment~1 code and carried that over, then kept building the retrieval and feedback on from there. Scoring is C++ and the standard library, loaded with \texttt{ctypes}. No search engine or IR scoring library is used. The stemmer follows Porter's reference implementation with a bounds check on short words. Query stopwords are the NLTK English list. SPUD follows Cummins, Paik and Lv (TOIS, 2015). Dirichlet and Jelinek--Mercer follow Zhai and Lafferty (SIGIR, 2001). RM1--RM3 follow Lavrenko and Croft (SIGIR, 2001).
  
 \end{document}

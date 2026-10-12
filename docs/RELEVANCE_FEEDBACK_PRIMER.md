@@ -22,7 +22,7 @@ Both are implemented in `submission/lm_utils.py`
 (`jelinek_mercer_smoothed_log_prob` / `dirichlet_smoothed_log_prob`); the
 shipped baseline uses Dirichlet with `μ = 1500`. Neither value is
 "correct" — tuning them, and understanding *why* your choice behaves the
-way it does on this corpus, is part of the assignment (Section 8).
+way it does on this corpus, is part of the project (Section 8).
 
 ## Relevance models (RM1 / RM2 / RM3)
 
@@ -48,7 +48,7 @@ quantity under a different conditional-independence assumption between
 query terms and the sampled document; some courses skip straight from RM1
 to RM3 without separately implementing RM2. If your lecture covered a
 specific RM2 formulation, use it — there is no single canonical form
-enforced by this assignment.
+enforced by this project.
 
 **RM3** — the version that matters most in practice — linearly
 interpolates the relevance model back with the original query's own
@@ -58,7 +58,7 @@ interpolates the relevance model back with the original query's own
 P_RM3(w) = λ · P(w | Q) + (1 - λ) · P(w | R)
 ```
 
-`λ` is the single most important knob in this assignment. `λ = 1` ignores
+`λ` is the single most important knob in this project. `λ = 1` ignores
 feedback entirely (identical, in effect, to the shipped trivial baseline).
 `λ = 0` trusts the relevance model completely, with no anchor back to
 what the user actually typed — maximally powerful when the pseudo-relevant
@@ -82,7 +82,7 @@ def relevance_model_feedback(query, pseudo_relevant_doc_ids, candidate_doc_ids, 
 
 None of `estimate_relevance_model`, `interpolate_with_query_model`, or
 `rank_by_relevance_model` are provided — implementing them, correctly and
-robustly, is the assignment. Note the two different doc-id lists doing
+robustly, is the project. Note the two different doc-id lists doing
 two different jobs: `pseudo_relevant_doc_ids` only ever feeds the
 *estimation* step; `candidate_doc_ids` is the pool your function actually
 reranks and returns from (see `docs/SUBMISSION_INTERFACE.md`).
@@ -97,7 +97,7 @@ though: `score_candidates()` and `relevance_model_feedback()` are graded
 purely on the ranked list they return (see `docs/SUBMISSION_INTERFACE.md`)
 — never on what statistics you computed to get there. If you want to
 extend a *correctly-implemented* unigram baseline with a bigram or
-positional component for competitive edge (assignment Section 4.1), go
+positional component for competitive edge (spec Section 4.1), go
 ahead; `lm_utils.py` is optional convenience, not a contract, so nothing
 stops you from building your own n-gram statistics alongside or instead
 of `CollectionStats`.

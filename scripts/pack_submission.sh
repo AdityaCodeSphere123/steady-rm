@@ -2,10 +2,10 @@
 # Build the student submission zip (repo layout, no corpora / build junk).
 #
 #   bash scripts/pack_submission.sh
-#   bash scripts/pack_submission.sh /path/to/2023CSXXXXX.zip
+#   bash scripts/pack_submission.sh /path/to/submission.zip
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${1:-$ROOT/COL764-Assignment2-submission.zip}"
+OUT="${1:-$ROOT/submission.zip}"
 OUT="$(python3 -c "import os,sys; print(os.path.abspath(sys.argv[1]))" "$OUT")"
 cd "$ROOT"
 
@@ -44,7 +44,7 @@ copy_tree .gitignore
 copy_tree .github
 
 # Do not ship: data/full and other corpora, .venv, .git, _build, *.so,
-# the tuning scripts in tools/, tune logs, assignment PDF/tex, NOTES, runs/
+# the tuning scripts in tools/, tune logs, spec PDF/tex, NOTES, runs/
 
 rm -f "$STAGE/scripts/pack_submission.sh"
 for f in submission/feedback.py README.md; do

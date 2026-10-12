@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Fetch the real assignment corpus + released dev topics/qrels via
+Fetch the real corpus + released dev topics/qrels via
 ir_datasets and write them into data/full/, in the same format used by
-data/toy/. Same mechanism as Assignment 1's script of the same name.
+data/toy/. Same mechanism as the earlier project's script of the same name.
 
 Usage:
     python scripts/download_full_corpus.py

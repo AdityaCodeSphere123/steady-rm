@@ -23,7 +23,7 @@ three names.
 
 Every retrieval call you implement is scoped to a PROVIDED candidate
 pool — `candidate_doc_ids`, typically the top-100 documents from an
-undisclosed reference retriever (assignment Section 6) — not the full
+undisclosed reference retriever (spec Section 6) — not the full
 corpus. `score_candidates()` reranks that pool with your own unigram LM;
 `relevance_model_feedback()` reranks the same pool using a relevance
 model estimated from `pseudo_relevant_doc_ids`. Both functions must
@@ -36,13 +36,13 @@ score, rank, or index the corpus at large per query.
 
 ## No build/load process split this time
 
-Assignment 1 ran `build_index()` and `load_index()`/`retrieve()` as two
+the earlier project ran `build_index()` and `load_index()`/`retrieve()` as two
 separate processes specifically to verify your index persistence was
-real. This assignment does not have that requirement — `prepare()` and
+real. This project does not have that requirement — `prepare()` and
 both retrieval functions run **in the same process**, called directly by
 `harness/run_harness.py`. Module-level state set in `prepare()` is
 expected to still be there when the retrieval functions run. This is a
-deliberate simplification for this assignment's compressed pre-midterm
+deliberate simplification for this project's compressed pre-midterm
 timeline, not a signal that persistence stopped mattering in general.
 
 ## Call-order independence
@@ -57,7 +57,7 @@ for that exact query text in this process. Concretely:
   `relevance_model_feedback()` instead of trusting the
   `pseudo_relevant_doc_ids` argument you were actually passed. The
   grading harness sometimes calls `relevance_model_feedback()` with a
-  noise-perturbed set (assignment Section 7, Track C) specifically to see
+  noise-perturbed set (spec Section 7, Track C) specifically to see
   whether your feedback estimation is sensitive to *that exact input* —
   silently substituting your own clean top-k defeats the entire point of
   the noise-injection stress test and will visibly show up as suspiciously
@@ -72,7 +72,7 @@ for that exact query text in this process. Concretely:
 
 Beyond call-order independence, the harness enforces:
 
-- **No duplicate doc_ids** in a single returned list (see Assignment 1's
+- **No duplicate doc_ids** in a single returned list (see the earlier project's
   `harness/metrics.py` for why — nDCG@10/MAP@10 are unbounded above by
   construction).
 - **Every returned doc_id must be in the candidate pool you were given**
@@ -95,11 +95,11 @@ rest of the class's grading run.
 
 Every push to your submission repository triggers the public harness on
 the toy set and reports pass/fail within minutes — use this early, this
-assignment's timeline leaves little room to discover interface breakage
+project's timeline leaves little room to discover interface breakage
 at the deadline.
 
 ## Conformance freeze
 
 48 hours before the deadline, the CI check must be green. Interface
 failures reported for the first time after the freeze are graded as a
-submission error (assignment Section 9), not treated as a harness bug.
+submission error (spec Section 9), not treated as a harness bug.

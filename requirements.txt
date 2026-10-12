@@ -2,5 +2,5 @@
 pytest>=7.0
 
 # Needed only for scripts/download_full_corpus.py (fetching the real
-# assignment corpus). Not required to run the toy set or the harness itself.
+# full corpus). Not required to run the toy set or the harness itself.
 ir_datasets>=0.5.5

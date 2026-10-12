@@ -1,6 +1,6 @@
 name: Conformance Check
 
-# Runs on every push (assignment Section 5, "Continuous conformance
+# Runs on every push (spec Section 5, "Continuous conformance
 # checking"): interface conformance tests plus a full harness pass over
 # the public toy/dev query set, so interface breakage is caught within
 # minutes of pushing, not at the deadline.

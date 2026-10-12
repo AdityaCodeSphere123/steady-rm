@@ -1,14 +1,14 @@
 """
 harness/leaderboard.py -- combine raw metrics into the weighted
-leaderboard score defined in the assignment (Section 7):
+leaderboard score defined in the spec (Section 7):
 
     Track A (base LM accuracy)        30%
   + Track B (clean feedback accuracy) 25%
   + Track C (drift robustness)        35%
   + Bonus (adversarial round-robin)   up to +10%, additive only
 
-As in Assignment 1, every track above is computed relative to the class
-(percentile rank), not from raw metric values -- see Assignment 1's
+As in the earlier project, every track above is computed relative to the class
+(percentile rank), not from raw metric values -- see the earlier project's
 harness/leaderboard.py module docstring, "Why accuracy is class-relative
 too", which applies unchanged here: a fixed weight only translates into
 that much real influence on rank order if the underlying raw values are
@@ -21,7 +21,7 @@ repository's aggregate_leaderboard.py).
 Track C is NOT a raw noisy-condition score -- it is a *retention ratio*:
 (mean nDCG@10 across the noisy conditions) / (your own clean-condition
 nDCG@10, i.e. your Track B raw score), percentile-ranked. See the
-assignment, Section 7, "A note on why Track C is a ratio, not a raw
+spec, Section 7, "A note on why Track C is a ratio, not a raw
 score", for why: scoring raw noisy-condition accuracy alone would just
 reward whoever already had the best Track A/B accuracy (correlated
 signal, not new information); dividing out your own clean-condition score
@@ -47,10 +47,10 @@ def _percentile_ranks(values: List[float]) -> List[float]:
     same (averaged-rank) percentile. A class of size 1 maps its lone
     value to 1.0 (nothing to be ranked against, so it gets the ceiling --
     matches instructor-tools/grading_rubric.py's treatment of a lone
-    baseline-beater). Identical logic and behaviour to Assignment 1's
+    baseline-beater). Identical logic and behaviour to the earlier project's
     harness/leaderboard.py._percentile_ranks(); duplicated here rather
     than imported so this repository has no dependency on the
-    Assignment 1 repository.
+    the earlier project repository.
     """
     n = len(values)
     if n == 0:
@@ -161,13 +161,13 @@ def summarize(
             "These are your RAW numbers -- Track A/B/C of the real "
             "leaderboard_score percentile-rank each of these against the "
             "whole class before applying the 30%/25%/35% weights (plus "
-            "up to +10% bonus), exactly as Assignment 1's accuracy "
+            "up to +10% bonus), exactly as the earlier project's accuracy "
             "components do, and for the same reason: a fixed weight only "
             "means what it says if the underlying values are spread out "
             "across the class, which no single team can know in "
             "isolation. The practice_retention_ratio above also uses the "
             "PUBLIC practice noise levels (harness/noise_injection.py), "
-            "not the undisclosed grading recipe (assignment Section 6) -- "
+            "not the undisclosed grading recipe (spec Section 6) -- "
             "treat it as a useful local signal, not your real Track C "
             "score. None of this is computable without seeing every "
             "team's numbers -- course staff apply all of it when "

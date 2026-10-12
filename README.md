@@ -1,10 +1,12 @@
-# Relevance-model feedback under query drift
+# steady-rm
+
+Relevance-model feedback that holds steady under query drift.
 
 Rerank a given candidate pool with a unigram language model, then expand the query with a relevance model estimated from a pseudo-relevant seed. The submitted system is built so that a clean seed can still help, while a seed that has been quietly filled with off-topic documents does not drag the ranking away from the original query.
 
-This is the system I built for [COL764](https://github.com/col7364iitd) (Information Retrieval and Web Search) at IIT Delhi, Assignment 2. The longer write-up, with the λ curves, is in [`report.pdf`](report.pdf).
+The longer write-up, with the λ curves, is in [`report/report.pdf`](report/report.pdf).
 
-**Author:** Aditya Anand (2023CS50284)
+**Author:** Aditya Anand
 
 ## Setup
 
@@ -140,7 +142,7 @@ python scripts/download_full_corpus.py
 
 `ir_datasets` is already installed by `requirements.txt`.
 
-That writes the corpus, queries, and qrels. The candidate pools used for the tables below were the ones released with the assignment. `download_full_corpus.py` does not rebuild them.
+That writes the corpus, queries, and qrels. The candidate pools used for the tables below were the ones released with the original task. `download_full_corpus.py` does not rebuild them.
 
 ## Checking the math
 
